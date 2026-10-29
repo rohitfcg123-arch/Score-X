@@ -145,8 +145,8 @@ function scorerInternalBack(){
  location.href='./';return true;
 }
 $('topBackBtn').onclick=()=>scorerInternalBack();
-history.replaceState({scoreXBase:true},'',location.href);
-history.pushState({scoreXInternal:true},'',location.href);
+window.history.replaceState({scoreXBase:true},'',location.href);
+window.history.pushState({scoreXInternal:true},'',location.href);
 window.addEventListener('popstate',()=>{
  scorerInternalBack();
  // Keep Android/browser Back within Score-X and route to the website home when no inner screen remains.
