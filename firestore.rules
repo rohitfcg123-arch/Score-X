@@ -4,7 +4,7 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
     function approved() { return signedIn() && userDoc().data.approved == true; }
-    function admin() { return approved() && userDoc().data.role == 'admin'; }
+    function admin() { return signedIn() && request.auth.token.email == 'rohit.fcg123@gmail.com' && request.auth.token.email_verified == true; }
 
     // Public users may only read published match scoreboards.
     match /matches/{matchId} {
