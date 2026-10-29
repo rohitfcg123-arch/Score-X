@@ -3,22 +3,24 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
-    function approved() { return signedIn() && userDoc().data.approved == true; }
+    function approved() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc().data.approved == true; }
     function admin() { return signedIn() && request.auth.token.email == 'rohit.fcg123@gmail.com' && request.auth.token.email_verified == true; }
+    function codeEnabled(codeId) { return exists(/databases/$(database)/documents/scorerCodes/$(codeId)) && get(/databases/$(database)/documents/scorerCodes/$(codeId)).data.enabled == true; }
+    function activeScorer() { return signedIn() && exists(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)) && get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data.active == true && codeEnabled(get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data.codeId); }
 
     // Public users may only read published match scoreboards.
     match /matches/{matchId} {
       allow read: if resource.data.status != 'deleted';
-      allow create: if approved()
-        && userDoc().data.role in ['admin', 'scorer']
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.teamA is string
-        && request.resource.data.teamB is string;
-      allow update: if admin() || (approved()
-        && userDoc().data.role == 'scorer'
-        && resource.data.createdBy == request.auth.uid
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.updatedBy == request.auth.uid);
+      allow create: if admin()
+        || (activeScorer()
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.teamA is string
+          && request.resource.data.teamB is string);
+      allow update: if admin()
+        || (activeScorer()
+          && resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.updatedBy == request.auth.uid);
       allow delete: if admin();
     }
 
@@ -30,12 +32,28 @@ service cloud.firestore {
     }
 
     match /scorerCodes/{codeId} {
-      // Only the verified owner admin can view, create, enable, disable or delete codes.
-      allow read, create, update, delete: if admin();
+      // A scorer who knows a code can fetch that single enabled code, but cannot list codes.
+      allow get: if admin() || (signedIn() && resource.data.enabled == true);
+      allow list: if admin();
+      allow create, update, delete: if admin();
+    }
+
+    match /scorerSessions/{uid} {
+      allow read: if admin() || (signedIn() && request.auth.uid == uid);
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && request.resource.data.keys().hasOnly(['displayName', 'codeId', 'active', 'createdAt'])
+        && request.resource.data.active == true
+        && request.resource.data.displayName is string
+        && request.resource.data.codeId is string
+        && codeEnabled(request.resource.data.codeId)
+        && get(/databases/$(database)/documents/scorerCodes/$(request.resource.data.codeId)).data.displayName == request.resource.data.displayName;
+      allow update, delete: if admin();
     }
 
     match /settings/{settingId} {
-      allow read: if approved();
+      allow read: if admin() || approved();
       allow write: if admin();
     }
     match /auditLogs/{logId} {
