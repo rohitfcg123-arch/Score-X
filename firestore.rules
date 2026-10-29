@@ -33,7 +33,7 @@ service cloud.firestore {
 
     match /scorerCodes/{codeId} {
       // A scorer who knows a code can fetch that single enabled code, but cannot list codes.
-      allow get: if admin() || (signedIn() && resource.data.enabled == true);
+      allow get: if admin() || signedIn();
       allow list: if admin();
       allow create, update, delete: if admin();
     }
