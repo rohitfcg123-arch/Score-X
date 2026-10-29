@@ -12,9 +12,9 @@ async function loadWork(user,name){
  $('login').classList.add('hidden');$('work').classList.remove('hidden');
  if(stopList){stopList();stopList=null}
  try{
-   const q=query(collection(db,'matches'),where('createdBy','==',user.uid),orderBy('updatedAt','desc'));
+   const q=query(collection(db,'matches'),where('createdBy','==',user.uid));
    stopList=onSnapshot(q,s=>{
-     const ms=s.docs.map(d=>({id:d.id,...d.data()}));
+     const ms=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>((b.updatedAt?.toMillis?.()||0)-(a.updatedAt?.toMillis?.()||0)));
      $('matchList').innerHTML=ms.length?ms.map(m=>'<div style="padding:12px 0;border-bottom:1px solid #29473d"><b>'+esc(m.teamA)+' vs '+esc(m.teamB)+'</b><div class="small">'+esc(m.tournament||'Match')+' · '+esc(m.status)+'</div><button style="margin-top:8px" data-open="'+m.id+'">Open scoring</button></div>').join(''):'No matches created yet.';
      document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>selectMatch(ms.find(m=>m.id===b.dataset.open)));
    },e=>say('Match list error: '+e.message));
