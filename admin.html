@@ -45,6 +45,6 @@ $('generateCodeBtn').onclick=async()=>{
     $('codeName').value='';
   }catch(e){say('Could not generate scorer code: '+e.message)}
 };
-\n$('saveUser').onclick=async()=>{const uid=$('uid').value.trim();if(!uid){say('Enter Firebase Auth UID.');return;}try{await setDoc(doc(db,'users',uid),{displayName:$('displayName').value.trim(),role:$('role').value,approved:$('approved').value==='true',updatedAt:serverTimestamp(),updatedBy:auth.currentUser.uid},{merge:true});say('User access record saved.')}catch(e){say('Could not save user: '+e.message)}};
+$('saveUser').onclick=async()=>{const uid=$('uid').value.trim();if(!uid){say('Enter Firebase Auth UID.');return;}try{await setDoc(doc(db,'users',uid),{displayName:$('displayName').value.trim(),role:$('role').value,approved:$('approved').value==='true',updatedAt:serverTimestamp(),updatedBy:auth.currentUser.uid},{merge:true});say('User access record saved.')}catch(e){say('Could not save user: '+e.message)}};
 $('saveLimit').onclick=async()=>{const n=Number($('limit').value);if(!Number.isInteger(n)||n<1||n>500){say('Enter a limit between 1 and 500.');return;}try{await setDoc(doc(db,'settings','access'),{maxConcurrentScorers:n,updatedAt:serverTimestamp(),updatedBy:auth.currentUser.uid},{merge:true});say('Limit saved. Strict session enforcement needs backend support.')}catch(e){say('Could not save limit: '+e.message)}};
 </script></body></html>
