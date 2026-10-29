@@ -291,7 +291,25 @@ window.addEventListener('popstate',()=>{
  // Keep Android/browser Back within Score-X and route to the website home when no inner screen remains.
  window.history.pushState({scoreXInternal:true},'',location.href);
 });$('scoreRefresh').onclick=async()=>{if(selectedId){const s=await getDoc(doc(db,'matches',selectedId));if(s.exists())selectMatch({id:s.id,...s.data()})}};
-$('extraWide').onchange=()=>{if($('extraWide').checked){const v=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();if(v.wide===false){$('extraWide').checked=false;say('Wide balls are disabled in Match Settings.');return}ball(Number(v.wideRuns??1),'wide')}};$('extraNoBall').onchange=()=>{if($('extraNoBall').checked){const v=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();if(v.noBall===false){$('extraNoBall').checked=false;say('No balls are disabled in Match Settings.');return}ball(Number(v.noBallRuns??1),'noball')}};$('extraByes').onchange=()=>{if($('extraByes').checked)ball(1,'bye')};$('extraLegByes').onchange=()=>{if($('extraLegByes').checked)ball(1,'legbye')};$('extraWicket').onchange=()=>{if($('extraWicket').checked)ball(0,'wicket')};$('retireBtn').onclick=()=>say('Edit the dismissed batter name and save player names to continue.');$('swapBatsmanBtn').onclick=async()=>{if(!selectedId||!currentUser)return;const a=$('strikerName').value.trim(),b=$('nonStrikerName').value.trim();$('strikerName').value=b;$('nonStrikerName').value=a;await $('savePlayersBtn').click()};$('partnershipBtn').onclick=()=>say('Partnership: '+($('strikerRuns').textContent||0)+' + '+($('nonStrikerRuns').textContent||0)+' runs by current batters.');$('extrasBtn').onclick=()=>say('Select Wide, No Ball, Byes or Leg Byes before recording the extra.');$('moreRunsBtn').onclick=()=>{const n=prompt('Enter runs (0–10):','7');if(n!==null&&Number.isInteger(Number(n))&&Number(n)>=0&&Number(n)<=10)ball(Number(n));};
+$('extraWide').onchange=()=>{if($('extraWide').checked){const v=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();if(v.wide===false){$('extraWide').checked=false;say('Wide balls are disabled in Match Settings.');return}ball(Number(v.wideRuns??1),'wide')}};$('extraNoBall').onchange=()=>{if($('extraNoBall').checked){const v=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();if(v.noBall===false){$('extraNoBall').checked=false;say('No balls are disabled in Match Settings.');return}ball(Number(v.noBallRuns??1),'noball')}};$('extraByes').onchange=()=>{if($('extraByes').checked)ball(1,'bye')};$('extraLegByes').onchange=()=>{if($('extraLegByes').checked)ball(1,'legbye')};$('extraWicket').onchange=()=>{if($('extraWicket').checked)ball(0,'wicket')};$('retireBtn').onclick=async()=>{
+ if(!selectedId||!currentUser||!selectedMatch)return;
+ const m=selectedMatch;
+ if(m.status!=='live'){say('Retire is available only during a live innings.');return;}
+ const choice=prompt('Which batter is retiring? Enter 1 for striker or 2 for non-striker.','1');
+ if(choice===null)return;
+ if(choice!=='1'&&choice!=='2'){say('Choose 1 for striker or 2 for non-striker.');return;}
+ const retiring=choice==='1'?m.strikerName:m.nonStrikerName,stay=choice==='1'?m.nonStrikerName:m.strikerName;
+ const incoming=prompt('Incoming batter name:','');
+ if(!incoming||!incoming.trim())return;
+ if(incoming.trim().toLowerCase()===String(stay||'').trim().toLowerCase()){say('Incoming batter must be different from the other active batter.');return;}
+ try{
+  const name=incoming.trim(),battingStats={...(m.battingStats||{}),[name]:{...((m.battingStats||{})[name]||{runs:0,balls:0,fours:0,sixes:0})}};
+  const patch={strikerName:choice==='1'?name:m.strikerName,nonStrikerName:choice==='2'?name:m.nonStrikerName,battingStats,retiredPlayers:[...(m.retiredPlayers||[]),{name:retiring||'',replacement:name,at:new Date().toISOString(),by:currentName}],previous:null,lastAction:{kind:'retire',batter:retiring||'',replacement:name,by:currentUser.uid,email:currentName,at:new Date().toISOString()},updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()};
+  await updateDoc(doc(db,'matches',selectedId),patch);
+  const snap=await getDoc(doc(db,'matches',selectedId));if(snap.exists())selectMatch({id:snap.id,...snap.data()});
+  say((retiring||'Batter')+' retired; '+name+' is now batting. Score remains unchanged.');
+ }catch(e){say('Could not retire batter: '+e.message)}
+};$('swapBatsmanBtn').onclick=async()=>{if(!selectedId||!currentUser)return;const a=$('strikerName').value.trim(),b=$('nonStrikerName').value.trim();$('strikerName').value=b;$('nonStrikerName').value=a;await $('savePlayersBtn').click()};$('partnershipBtn').onclick=()=>say('Partnership: '+($('strikerRuns').textContent||0)+' + '+($('nonStrikerRuns').textContent||0)+' runs by current batters.');$('extrasBtn').onclick=()=>say('Select Wide, No Ball, Byes or Leg Byes before recording the extra.');$('moreRunsBtn').onclick=()=>{const n=prompt('Enter runs (0–10):','7');if(n!==null&&Number.isInteger(Number(n))&&Number(n)>=0&&Number(n)<=10)ball(Number(n));};
 
 $('undoBtn').onclick=async()=>{
  if(!selectedId||!currentUser||scoringPending)return;
