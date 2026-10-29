@@ -187,7 +187,18 @@ function returnToMatchSetup(){$('openingPage').classList.add('hidden');$('openin
 $('backOpening').onclick=returnToMatchSetup;
 $('createBtn').onclick=()=>{if(!currentUser)return;const teamA=$('teamA').value.trim()||'Host Team',teamB=$('teamB').value.trim()||'Visitor Team',maxOvers=Number($('maxOvers').value);if(teamA.toLowerCase()===teamB.toLowerCase()||!Number.isInteger(maxOvers)||maxOvers<1||maxOvers>100){say('Use different team names and valid overs.');return;}const tossWinner=document.querySelector('input[name="tossWinner"]:checked')?.value||'host';const optedTo=document.querySelector('input[name="optedTo"]:checked')?.value||'bat';const battingFirst=(tossWinner==='host'?(optedTo==='bat'?'teamA':'teamB'):(optedTo==='bat'?'teamB':'teamA'));pendingMatch={tournament:$('tournament').value.trim(),teamA,teamB,maxOvers,battingFirst,battingTeam:battingFirst==='teamA'?teamA:teamB,bowlingTeam:battingFirst==='teamA'?teamB:teamA,tossWinner:tossWinner==='host'?teamA:teamB,optedTo};showOpeningPage();say('Enter the opening two batsmen and bowler to continue.');};
 $('startMatchBtn').onclick=async()=>{if(!currentUser||!pendingMatch)return;const strikerName=$('openingStriker').value.trim(),nonStrikerName=$('openingNonStriker').value.trim(),bowlerName=$('openingBowler').value.trim();if(!strikerName||!nonStrikerName||!bowlerName){say('Enter striker, non-striker and opening bowler before starting.');return;}if(strikerName.toLowerCase()===nonStrikerName.toLowerCase()){say('Striker and non-striker must be different players.');return;}const b=$('startMatchBtn');b.disabled=true;try{const ref=await addDoc(collection(db,'matches'),{...pendingMatch,overs:pendingMatch.maxOvers,score:0,wickets:0,balls:0,innings:1,teamAScore:null,teamBScore:null,playersPerTeam:(()=>{try{return Number(JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}').players)||11}catch{return 11}})(),strikerName,nonStrikerName,bowlerName,battingStats:{[strikerName]:{runs:0,balls:0,fours:0,sixes:0},[nonStrikerName]:{runs:0,balls:0,fours:0,sixes:0}},bowlerStats:{[bowlerName]:{runs:0,balls:0,wickets:0}},recentBalls:[],ballHistory:[],target:null,status:'live',statusText:'Players ready',createdBy:currentUser.uid,createdByEmail:currentName,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});const snap=await getDoc(ref);pendingMatch=null;$('openingPage').classList.add('hidden');$('openingPage').style.display='none';$('bottomNav').classList.add('hidden');selectMatch({id:ref.id,...snap.data()});say('Match started. Scores update live.');window.scrollTo(0,0);}catch(e){say('Could not start match: '+e.message)}finally{b.disabled=false}};
-$('savePlayersBtn').onclick=async()=>{if(!selectedId||!currentUser)return;const strikerName=$('strikerName').value.trim(),nonStrikerName=$('nonStrikerName').value.trim(),bowlerName=$('bowlerName').value.trim();if(!strikerName||!nonStrikerName||!bowlerName){say('All three names are compulsory before scoring: both batsmen and bowler.');return;}if(strikerName.toLowerCase()===nonStrikerName.toLowerCase()){say('Enter two different batsman names.');return;}try{await updateDoc(doc(db,'matches',selectedId),{strikerName,nonStrikerName,bowlerName,playerNamesUpdatedAt:serverTimestamp(),updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),statusText:(selectedMatch?.status==='innings_break'?'Innings complete':'Players ready · '+(selectedMatch?.score||0)+'/'+(selectedMatch?.wickets||0))});say('Player names saved. Scoring is enabled.');const s=await getDoc(doc(db,'matches',selectedId));if(s.exists())selectMatch({id:s.id,...s.data()});}catch(e){say('Could not save player names: '+e.message)}};
+$('savePlayersBtn').onclick=async()=>{
+ if(!selectedId||!currentUser||!selectedMatch)return;
+ const strikerName=$('strikerName').value.trim(),nonStrikerName=$('nonStrikerName').value.trim(),bowlerName=$('bowlerName').value.trim();
+ if(!strikerName||!nonStrikerName||!bowlerName){say('All three names are compulsory before scoring: both batsmen and bowler.');return;}
+ if(strikerName.toLowerCase()===nonStrikerName.toLowerCase()){say('Enter two different batsman names.');return;}
+ const patch={strikerName,nonStrikerName,bowlerName,playerNamesUpdatedAt:serverTimestamp(),updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),statusText:(selectedMatch.status==='innings_break'?'Innings complete':'Players ready · '+(selectedMatch.score||0)+'/'+(selectedMatch.wickets||0))};
+ const prior=selectedMatch;selectMatch({...prior,...patch,updatedAt:new Date()});say('Player names updated · syncing to Viewer…');
+ try{await updateDoc(doc(db,'matches',selectedId),patch);say('Player names saved. Viewer is live.');}
+ catch(e){console.error('Save players failed',e);say('Player save failed ('+(e.code||'error')+'): '+e.message);const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}
+};
+
+function setScoreTab(tab){;
 
 function setScoreTab(tab){
  activeScoreTab=tab;
@@ -322,17 +333,14 @@ $('extraWide').onchange=()=>{if($('extraWide').checked){const v=(()=>{try{return
 };$('partnershipBtn').onclick=()=>say('Partnership: '+($('strikerRuns').textContent||0)+' + '+($('nonStrikerRuns').textContent||0)+' runs by current batters.');$('extrasBtn').onclick=()=>say('Select Wide, No Ball, Byes or Leg Byes before recording the extra.');$('moreRunsBtn').onclick=()=>{const n=prompt('Enter runs (0–10):','7');if(n!==null&&Number.isInteger(Number(n))&&Number(n)>=0&&Number(n)<=10)ball(Number(n));};
 
 $('undoBtn').onclick=async()=>{
- if(!selectedId||!currentUser||scoringPending)return;
- try{
-  const updated=await runTransaction(db,async tx=>{
-   const ref=doc(db,'matches',selectedId),snap=await tx.get(ref);if(!snap.exists())throw Error('Match not found');
-   const m=snap.data(),p=m.previous;if(!p)throw Error('Nothing to undo.');
-   if(m.status==='completed')throw Error('This match is completed, so Undo is locked.');
-   const patch={score:p.score,wickets:p.wickets,balls:p.balls,innings:p.innings,status:p.status,statusText:p.statusText,teamAScore:p.teamAScore??m.teamAScore??null,teamBScore:p.teamBScore??m.teamBScore??null,battingStats:p.battingStats||m.battingStats||{},bowlerStats:p.bowlerStats||m.bowlerStats||{},recentBalls:p.recentBalls||m.recentBalls||[],ballHistory:p.ballHistory||m.ballHistory||[],strikerName:p.strikerName??m.strikerName??'',nonStrikerName:p.nonStrikerName??m.nonStrikerName??'',bowlerName:p.bowlerName??m.bowlerName??'',target:p.target??m.target??null,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind:'undo',by:currentUser.uid,email:currentName,at:new Date().toISOString()},previous:null};
-   tx.update(ref,patch);return {...m,...patch,updatedAt:new Date()};
-  });
-  selectMatch({...updated,id:selectedId});say('Last delivery undone and viewers updated.');
- }catch(e){say('Undo failed: '+e.message)}
+ if(!selectedId||!currentUser||scoringPending||!selectedMatch)return;
+ const m=selectedMatch,p=m.previous;
+ if(!p){say('Nothing to undo yet.');return;}
+ if(m.status==='completed'){say('This match is completed, so Undo is locked.');return;}
+ const patch={score:p.score,wickets:p.wickets,balls:p.balls,innings:p.innings,status:p.status,statusText:p.statusText,teamAScore:p.teamAScore??m.teamAScore??null,teamBScore:p.teamBScore??m.teamBScore??null,battingStats:p.battingStats||m.battingStats||{},bowlerStats:p.bowlerStats||m.bowlerStats||{},recentBalls:p.recentBalls||m.recentBalls||[],ballHistory:p.ballHistory||m.ballHistory||[],strikerName:p.strikerName??m.strikerName??'',nonStrikerName:p.nonStrikerName??m.nonStrikerName??'',bowlerName:p.bowlerName??m.bowlerName??'',target:p.target??m.target??null,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind:'undo',by:currentUser.uid,email:currentName,at:new Date().toISOString()},previous:null};
+ selectMatch({...m,...patch,id:selectedId,updatedAt:new Date()});say('Undo shown immediately · syncing to Viewer…');
+ try{await updateDoc(doc(db,'matches',selectedId),patch);say('Last delivery undone. Viewer is live.');}
+ catch(e){console.error('Undo failed',e);say('Undo failed ('+(e.code||'error')+'): '+e.message);const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}
 };
 
 $('inningsBtn').onclick=async()=>{
@@ -348,15 +356,17 @@ $('inningsBtn').onclick=async()=>{
    if(striker.trim().toLowerCase()===nonStriker.trim().toLowerCase()){say('Enter two different batsmen.');return;}
    const bowler=prompt('Opening bowler for second innings:','');if(!bowler||!bowler.trim())return;
    const teamAScore=m.teamA===m.battingTeam?Number(m.score||0):(m.teamAScore??null),teamBScore=m.teamB===m.battingTeam?Number(m.score||0):(m.teamBScore??null),target=Number(m.score||0)+1;
-   await updateDoc(doc(db,'matches',selectedId),{innings:2,battingTeam:nextTeam,score:0,wickets:0,balls:0,teamAScore,teamBScore,target,strikerName:striker.trim(),nonStrikerName:nonStriker.trim(),bowlerName:bowler.trim(),status:'live',statusText:'2nd innings · target '+target,battingStats:{...(m.battingStats||{}),[striker.trim()]:{...((m.battingStats||{})[striker.trim()]||{runs:0,balls:0,fours:0,sixes:0})},[nonStriker.trim()]:{...((m.battingStats||{})[nonStriker.trim()]||{runs:0,balls:0,fours:0,sixes:0})}},bowlerStats:{...(m.bowlerStats||{}),[bowler.trim()]:{...((m.bowlerStats||{})[bowler.trim()]||{runs:0,balls:0,wickets:0,maidens:0})}},recentBalls:[],previous:null,lastAction:{kind:'innings-start',by:currentUser.uid,email:currentName,at:new Date().toISOString()},updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});
-   say('Second innings started. Viewer target and score will update live.');
+   const patch={innings:2,battingTeam:nextTeam,score:0,wickets:0,balls:0,teamAScore,teamBScore,target,strikerName:striker.trim(),nonStrikerName:nonStriker.trim(),bowlerName:bowler.trim(),status:'live',statusText:'2nd innings · target '+target,battingStats:{...(m.battingStats||{}),[striker.trim()]:{...((m.battingStats||{})[striker.trim()]||{runs:0,balls:0,fours:0,sixes:0})},[nonStriker.trim()]:{...((m.battingStats||{})[nonStriker.trim()]||{runs:0,balls:0,fours:0,sixes:0})}},bowlerStats:{...(m.bowlerStats||{}),[bowler.trim()]:{...((m.bowlerStats||{})[bowler.trim()]||{runs:0,balls:0,wickets:0,maidens:0})}},recentBalls:[],previous:null,lastAction:{kind:'innings-start',by:currentUser.uid,email:currentName,at:new Date().toISOString()},updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()};
+   selectMatch({...m,...patch,id:selectedId,updatedAt:new Date()});say('Second innings started · syncing target to Viewer…');
+   await updateDoc(doc(db,'matches',selectedId),patch);say('Second innings started. Viewer is live.');
   }else{
    if(m.status!=='completed'&&!confirm('Finish the match now?'))return;
-   await updateDoc(doc(db,'matches',selectedId),{status:'completed',statusText:m.statusText||'Match completed',updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});
-   say('Match finished. The final score is visible to viewers.');
+   const patch={status:'completed',statusText:m.statusText||'Match completed',updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()};
+   selectMatch({...m,...patch,id:selectedId,updatedAt:new Date()});say('Match finishing · syncing to Viewer…');
+   await updateDoc(doc(db,'matches',selectedId),patch);say('Match finished. Viewer has the final score.');
   }
-  const snap=await getDoc(doc(db,'matches',selectedId));if(snap.exists())selectMatch({id:snap.id,...snap.data()});
- }catch(e){say('Could not change innings: '+e.message)}
+ }catch(e){console.error('Innings/end action failed',e);say('Innings update failed ('+(e.code||'error')+'): '+e.message);const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}
 };
-$('endBtn').onclick=async()=>{if(!selectedId||!confirm('End this match?'))return;try{await updateDoc(doc(db,'matches',selectedId),{status:'completed',statusText:'Match completed',updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});say('Match ended.')}catch(e){say('Could not end match: '+e.message)}};
+
+$('endBtn').onclick=async()=>{if(!selectedId||!currentUser||!confirm('End this match?'))return;const m=selectedMatch;if(!m)return;const patch={status:'completed',statusText:'Match completed',updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()};selectMatch({...m,...patch,id:selectedId,updatedAt:new Date()});say('Ending match · syncing to Viewer…');try{await updateDoc(doc(db,'matches',selectedId),patch);say('Match ended. Viewer has the final score.')}catch(e){console.error('End match failed',e);say('End match failed ('+(e.code||'error')+'): '+e.message);const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}};
 </script></body></html>
