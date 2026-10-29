@@ -28,17 +28,20 @@ $('loginBtn').onclick=async()=>{
  const code=$('secretCode').value.trim().toUpperCase();
  if(!displayName||!code){say('Enter both scorer name and secret code.');return;}
  loginPending=true;$('loginBtn').disabled=true;say('Checking secret code…');
+ let stage='anonymous sign-in';
  try{
    if(auth.currentUser)await signOut(auth);
    const cred=await signInAnonymously(auth);
+   stage='reading scorer code';
    const codeSnap=await getDoc(doc(db,'scorerCodes',code));
    if(!codeSnap.exists()||codeSnap.data().enabled!==true){await signOut(auth);throw new Error('Invalid or disabled secret code. Ask the admin for an active code.');}
    const data=codeSnap.data();
    if(String(data.displayName||'').trim().toLowerCase()!==displayName.toLowerCase()){await signOut(auth);throw new Error('Name does not match this code. Check the name given by admin.');}
+   stage='creating scorer session';
    await setDoc(doc(db,'scorerSessions',cred.user.uid),{displayName:data.displayName,codeId:code,active:true,createdAt:serverTimestamp()});
    currentName=data.displayName;
    await loadWork(cred.user,data.displayName);
- }catch(e){say('Scorer login failed: '+e.message+' If anonymous sign-in is disabled, enable it in Firebase Authentication.');}
+ }catch(e){say('Scorer login failed during '+stage+': '+e.message+' Check that the latest Firestore Rules were actually published.');}
  finally{loginPending=false;$('loginBtn').disabled=false;}
 };
 $('logoutBtn').onclick=async()=>{try{if(stopList){stopList();stopList=null}await signOut(auth);currentUser=null;currentName='';$('work').classList.add('hidden');$('login').classList.remove('hidden');say('Signed out. Enter your name and code to continue.')}catch(e){say('Sign-out failed: '+e.message)}};
