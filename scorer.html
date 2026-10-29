@@ -228,10 +228,7 @@ async function ball(run,kind='normal'){
  if(selectedMatch&&($('strikerName').value.trim()!==String(selectedMatch.strikerName||'').trim()||$('nonStrikerName').value.trim()!==String(selectedMatch.nonStrikerName||'').trim()||$('bowlerName').value.trim()!==String(selectedMatch.bowlerName||'').trim())){say('Player names were changed. Tap Save player names before scoring.');return;}
  scoringPending=true;
  try{
-  const updated=await runTransaction(db,async tx=>{
-   const ref=doc(db,'matches',selectedId),snap=await tx.get(ref);
-   if(!snap.exists())throw Error('Match not found');
-   const m=snap.data();
+  const m={...selectedMatch};
    if(m.status!=='live')throw Error('Match is not live. Use Next innings or Finish match.');
    if(!m.strikerName||!m.nonStrikerName||!m.bowlerName)throw Error('Save both batsmen and the bowler before scoring.');
    const settings=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();
@@ -266,13 +263,13 @@ async function ball(run,kind='normal'){
    const teamAScore=m.teamA===m.battingTeam?score:(m.teamAScore??null),teamBScore=m.teamB===m.battingTeam?score:(m.teamBScore??null);
    const previous={score:m.score??0,wickets:m.wickets??0,balls:m.balls??0,innings:m.innings??1,status:m.status,statusText:m.statusText||'',teamAScore:m.teamAScore??null,teamBScore:m.teamBScore??null,battingStats:m.battingStats||{},bowlerStats:m.bowlerStats||{},recentBalls:m.recentBalls||[],ballHistory:m.ballHistory||[],strikerName:m.strikerName||'',nonStrikerName:m.nonStrikerName||'',bowlerName:m.bowlerName||'',target:m.target??null};
    const patch={score,wickets,balls,[m.teamA===m.battingTeam?'teamAScore':'teamBScore']:score,teamAScore,teamBScore,status,statusText,strikerName,nonStrikerName,bowlerName,battingStats,bowlerStats,recentBalls,ballHistory,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind,run:Number(run||0),by:currentUser.uid,email:currentName,at:new Date().toISOString(),striker:batter,nonStriker:otherBatter,bowler},previous};
-   tx.update(ref,patch);
-   return {...m,...patch,updatedAt:new Date()};
-  });
-  selectMatch({...updated,id:selectedId});
-  say(updated.status==='completed'?'Match completed. Live viewers have the final score.':'Score updated. Live viewers are syncing.');
+   const updated={...m,...patch,updatedAt:new Date()};
+   selectMatch({...updated,id:selectedId});
+   say('Score shown instantly · syncing to Viewer…');
+   await updateDoc(doc(db,'matches',selectedId),patch);
+   say(updated.status==='completed'?'Match completed. Viewer received the final score.':'Score saved. Viewer is live.');
   ['extraWide','extraNoBall','extraByes','extraLegByes','extraWicket'].forEach(id=>$(id).checked=false);
- }catch(e){console.error('Score-X ball update failed',e);say('Score save failed ('+(e.code||'error')+'): '+(e.message||String(e))+' · Check login/session and Firestore Rules.')}
+ }catch(e){console.error('Score-X ball update failed',e);say('Score save failed ('+(e.code||'error')+'): '+(e.message||String(e))+' · Check login/session and Firestore Rules.');if(selectedId){const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}}
  finally{scoringPending=false;const ready=!!(selectedMatch&&selectedMatch.strikerName&&selectedMatch.nonStrikerName&&selectedMatch.bowlerName&&selectedMatch.status==='live');document.querySelectorAll('[data-run],#extraWide,#extraNoBall,#extraByes,#extraLegByes,#extraWicket').forEach(b=>b.disabled=!ready);}
 }
 document.querySelectorAll('[data-run]').forEach(b=>{b.type='button';b.addEventListener('click',()=>{if(b.disabled)return;ball(Number(b.dataset.run));});});$('backScoring').onclick=()=>{if(confirm('Leave this match screen? The match will remain saved.')){stopSelectedMatchSync();selectedId=null;selectedMatch=null;$('scorePanel').classList.add('hidden');$('work').classList.remove('hidden');$('bottomNav').classList.remove('hidden');showTab('historyTab')}};
