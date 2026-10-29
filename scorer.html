@@ -198,8 +198,6 @@ $('savePlayersBtn').onclick=async()=>{
  catch(e){console.error('Save players failed',e);say('Player save failed ('+(e.code||'error')+'): '+e.message);const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}
 };
 
-function setScoreTab(tab){;
-
 function setScoreTab(tab){
  activeScoreTab=tab;
  $('scoreTabScore').classList.toggle('hidden',tab!=='score');
