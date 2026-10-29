@@ -28,6 +28,12 @@ service cloud.firestore {
       allow create, update: if admin();
       allow delete: if admin();
     }
+
+    match /scorerCodes/{codeId} {
+      // Only the verified owner admin can view, create, enable, disable or delete codes.
+      allow read, create, update, delete: if admin();
+    }
+
     match /settings/{settingId} {
       allow read: if approved();
       allow write: if admin();
