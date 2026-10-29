@@ -2,9 +2,9 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scorer Desk | Score-X</title><style>
 :root{color-scheme:dark;--bg:#071b16;--panel:#102a23;--line:#29473d;--lime:#c6f36b;--muted:#a6bbb1;--red:#ff8e86}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f3f8f4;font:16px system-ui,Arial}header,main{max-width:900px;margin:auto;padding:20px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}a{color:var(--lime);text-decoration:none}.brand{font-size:22px;font-weight:900}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin:18px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:block;color:var(--muted);font-size:13px;margin:0 0 6px}input,select{width:100%;padding:12px;border-radius:10px;background:#071b16;color:white;border:1px solid var(--line);font:inherit}button{padding:12px 15px;border-radius:10px;border:0;background:var(--lime);color:#102018;font-weight:800;font:inherit;cursor:pointer}button.secondary{background:transparent;color:#fff;border:1px solid var(--line)}button:disabled{opacity:.45}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.scoreline{font-size:38px;font-weight:900;margin:12px 0}.muted{color:var(--muted)}.notice{padding:12px;background:#1b332b;border-radius:10px;color:var(--muted);white-space:pre-wrap}.hidden{display:none!important}.small{font-size:12px;color:var(--muted)}@media(max-width:560px){.grid{grid-template-columns:1fr}header,main{padding:14px}.scoreline{font-size:32px}}</style></head><body><header><div class="brand">SCORE<span style="color:var(--lime)">-X</span> / SCORER</div><a href="./index.html">Home</a></header><main><h1>Scorer Desk</h1><p class="muted">Enter the name and unique secret code provided by the Score-X administrator.</p><section class="panel" id="login"><h2>Scorer Login</h2><div class="grid"><div><label>Scorer name</label><input id="scorerName" autocomplete="name" placeholder="Name given by admin" maxlength="80"></div><div><label>Secret code</label><input id="secretCode" autocomplete="one-time-code" placeholder="Enter secret code" autocapitalize="characters" spellcheck="false"></div></div><div class="actions"><button id="loginBtn" type="button">Enter Scorer Desk</button><button class="secondary" id="logoutBtn" type="button">Sign out</button></div><p class="small">Only an active code issued by the administrator will work.</p></section><section id="work" class="hidden"><div class="panel"><h2>Create match</h2><div class="grid"><div><label>Tournament / match name (optional)</label><input id="tournament" placeholder="Club tournament"></div><div><label>Overs per innings</label><input id="maxOvers" type="number" min="1" max="100" value="20"></div><div><label>Team 1</label><input id="teamA" placeholder="Team A"></div><div><label>Team 2</label><input id="teamB" placeholder="Team B"></div></div><div class="actions"><button id="createBtn">Create match</button></div></div><div class="panel"><h2>My matches</h2><div id="matchList" class="muted">Loading…</div></div><div id="scorePanel" class="panel hidden"><h2 id="matchTitle">Score update</h2><div id="scoreline" class="scoreline">0/0</div><p id="overline" class="muted">0.0 overs</p><div class="actions"><button data-run="0">Dot ball</button><button data-run="1">+1</button><button data-run="2">+2</button><button data-run="3">+3</button><button data-run="4">FOUR</button><button data-run="6">SIX</button><button id="wideBtn" class="secondary">Wide +1</button><button id="noballBtn" class="secondary">No-ball +1</button><button id="byeBtn" class="secondary">Bye +1</button><button id="wicketBtn" style="background:#ff8e86">Wicket</button><button id="undoBtn" class="secondary">Undo last ball</button><button id="endBtn" class="secondary">End match</button></div><p class="small">Each scoring action is recorded with the signed-in account and timestamp. Wides/no-balls do not consume a legal ball.</p></div></section><p id="message" class="notice">Ready.</p></main><script type="module">
 import {auth,db} from './firebase.js';
-import {signInAnonymously,onAuthStateChanged,signOut} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
+import {signInAnonymously,onAuthStateChanged,signOut,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import {collection,addDoc,doc,updateDoc,onSnapshot,query,where,orderBy,serverTimestamp,getDoc,runTransaction} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-const $=id=>document.getElementById(id);let currentUser=null,selectedId=null,selectedMatch=null,stopList=null,history=[],currentName='',loginPending=false,initializing=false;
+const $=id=>document.getElementById(id);let currentUser=null,selectedId=null,selectedMatch=null,stopList=null,history=[],currentName='',loginPending=false,initializing=false;const authReady=setPersistence(auth,browserLocalPersistence).catch(e=>console.warn('Could not set local auth persistence:',e));
 const say=t=>$('message').textContent=t;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function loadWork(user,name){
  if(initializing)return;initializing=true;
@@ -30,7 +30,18 @@ $('loginBtn').onclick=async()=>{
  loginPending=true;$('loginBtn').disabled=true;say('Checking secret code…');
  let stage='anonymous sign-in';
  try{
-   if(auth.currentUser)await signOut(auth);
+   await authReady;
+   if(auth.currentUser && auth.currentUser.isAnonymous){
+     const oldSession=await getDoc(doc(db,'scorerSessions',auth.currentUser.uid)).catch(()=>null);
+     if(oldSession&&oldSession.exists()&&oldSession.data().active===true){
+       const oldCode=oldSession.data().codeId;
+       if(oldCode===code && String(oldSession.data().displayName||'').trim().toLowerCase()===displayName.toLowerCase()){
+         const codeSnap=await getDoc(doc(db,'scorerCodes',code));
+         if(codeSnap.exists()&&codeSnap.data().enabled===true){currentName=oldSession.data().displayName;await loadWork(auth.currentUser,currentName);return;}
+       }
+     }
+     await signOut(auth);
+   } else if(auth.currentUser) await signOut(auth);
    const cred=await signInAnonymously(auth);
    stage='reading scorer code';
    const codeSnap=await getDoc(doc(db,'scorerCodes',code));
@@ -50,12 +61,12 @@ onAuthStateChanged(auth,async user=>{
  if(!user){currentUser=null;$('login').classList.remove('hidden');$('work').classList.add('hidden');if(stopList){stopList();stopList=null}return;}
  try{
    const session=await getDoc(doc(db,'scorerSessions',user.uid));
-   if(!session.exists()||session.data().active!==true){await signOut(auth);return;}
+   if(!session.exists()||session.data().active!==true){$('login').classList.remove('hidden');$('work').classList.add('hidden');say('Please enter your scorer name and code to start a session.');return;}
    const codeSnap=await getDoc(doc(db,'scorerCodes',session.data().codeId));
    if(!codeSnap.exists()||codeSnap.data().enabled!==true){await signOut(auth);say('This scorer code has been disabled. Ask the admin.');return;}
    currentName=session.data().displayName||codeSnap.data().displayName||'Scorer';
    await loadWork(user,currentName);
- }catch(e){say('Scorer session error: '+e.message);$('login').classList.remove('hidden');$('work').classList.add('hidden');}
+ }catch(e){say('Saved scorer session could not be verified: '+e.message+'. Your login has not been signed out; try refresh after the admin publishes the latest rules.');$('login').classList.add('hidden');$('work').classList.remove('hidden');$('matchList').textContent='Unable to load matches until Firestore permissions are fixed.';}
 });
 $('createBtn').onclick=async()=>{if(!currentUser)return;const teamA=$('teamA').value.trim(),teamB=$('teamB').value.trim(),maxOvers=Number($('maxOvers').value);if(!teamA||!teamB||teamA===teamB||!Number.isInteger(maxOvers)||maxOvers<1||maxOvers>100){say('Enter two different team names and valid overs.');return;}try{const ref=await addDoc(collection(db,'matches'),{tournament:$('tournament').value.trim(),teamA,teamB,maxOvers,overs:maxOvers,score:0,wickets:0,balls:0,innings:1,teamAScore:null,teamBScore:null,status:'live',statusText:'Match in progress',createdBy:currentUser.uid,createdByEmail:currentName,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),playerNamesOptional:true});say('Match created.');const snap=await getDoc(ref);selectMatch({id:ref.id,...snap.data()});}catch(e){say('Could not create match: '+e.message)}};
 function selectMatch(m){if(!m)return;selectedId=m.id;selectedMatch=m;$('scorePanel').classList.remove('hidden');$('matchTitle').textContent=m.teamA+' vs '+m.teamB;$('scoreline').textContent=(m.score||0)+'/'+(m.wickets||0);$('overline').textContent=Math.floor((m.balls||0)/6)+'.'+((m.balls||0)%6)+' overs · '+m.maxOvers+' overs';}
