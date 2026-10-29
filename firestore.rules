@@ -10,7 +10,7 @@ service cloud.firestore {
 
     // Public users may only read published match scoreboards.
     match /matches/{matchId} {
-      allow read: if resource.data.status != 'deleted';
+      allow read: if true;
       allow create: if admin()
         || (activeScorer()
           && request.resource.data.createdBy == request.auth.uid
