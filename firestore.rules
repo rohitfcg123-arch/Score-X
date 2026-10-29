@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function approved() { return signedIn() && userDoc().data.approved == true; }
+    function admin() { return approved() && userDoc().data.role == 'admin'; }
+
+    // Public users may only read published match scoreboards.
+    match /matches/{matchId} {
+      allow read: if resource.data.status != 'deleted';
+      allow create: if approved()
+        && userDoc().data.role in ['admin', 'scorer']
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.teamA is string
+        && request.resource.data.teamB is string;
+      allow update: if admin() || (approved()
+        && userDoc().data.role == 'scorer'
+        && resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.updatedBy == request.auth.uid);
+      allow delete: if admin();
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || admin());
+      // Admins can approve users, but users cannot assign themselves a role.
+      allow create, update: if admin();
+      allow delete: if admin();
+    }
+    match /settings/{settingId} {
+      allow read: if approved();
+      allow write: if admin();
+    }
+    match /auditLogs/{logId} {
+      allow read: if admin();
+      allow create: if approved() && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}
