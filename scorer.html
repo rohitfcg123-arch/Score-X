@@ -140,7 +140,20 @@ $('loginBtn').onclick=async()=>{
  let stage='anonymous sign-in';
  try{
    await authReady;
-   if(auth.currentUser) await signOut(auth);
+   // Reuse the existing anonymous identity when it already owns this scorer code.
+   // This preserves access to matches created in the original browser session.
+   if(auth.currentUser && auth.currentUser.isAnonymous){
+     const oldSession=await getDoc(doc(db,'scorerSessions',auth.currentUser.uid)).catch(()=>null);
+     if(oldSession&&oldSession.exists()&&oldSession.data().active===true&&oldSession.data().codeId===code&&String(oldSession.data().displayName||'').trim().toLowerCase()===displayName.toLowerCase()){
+       const existingCode=await getDoc(doc(db,'scorerCodes',code));
+       if(existingCode.exists()&&existingCode.data().enabled===true){
+         currentName=oldSession.data().displayName;
+         await loadWork(auth.currentUser,currentName);
+         return;
+       }
+     }
+     await signOut(auth);
+   } else if(auth.currentUser) await signOut(auth);
    const cred=await signInAnonymously(auth);
    stage='reading scorer code';
    const codeSnap=await getDoc(doc(db,'scorerCodes',code));
@@ -156,16 +169,35 @@ $('loginBtn').onclick=async()=>{
 };
 $('logoutBtn').onclick=async()=>{try{if(stopList){stopList();stopList=null}stopSelectedMatchSync();await signOut(auth);currentUser=null;currentName='';$('work').classList.add('hidden');$('login').classList.remove('hidden');$('bottomNav').classList.add('hidden');say('Signed out. Enter your name and code to continue.')}catch(e){say('Sign-out failed: '+e.message)}};
 let authStateResolved=false;
-onAuthStateChanged(auth,user=>{
+onAuthStateChanged(auth,async user=>{
  authStateResolved=true;
- // Do not let Firebase's sign-in callback interrupt an explicit scorer login.
  if(loginPending)return;
- currentUser=null;currentName='';
- $('login').classList.remove('hidden');
- $('work').classList.add('hidden');
- $('bottomNav').classList.add('hidden');
- if(stopList){stopList();stopList=null;}
- say(user?'Firebase is connected. Enter your scorer name and active secret code.':'Enter the scorer name and active secret code.');
+ if(!user){
+   currentUser=null;currentName='';
+   $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
+   say('Enter the scorer name and active secret code.');
+   return;
+ }
+ // Restore the same saved Firebase identity so its existing matches remain accessible.
+ $('login').classList.add('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
+ say('Restoring saved scorer session…');
+ try{
+   const session=await Promise.race([getDoc(doc(db,'scorerSessions',user.uid)),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Session check timed out. Check internet and reload.')),10000))]);
+   if(!session.exists()||session.data().active!==true){
+     $('login').classList.remove('hidden');say('Saved scorer session not found. Enter your name and code.');
+     return;
+   }
+   const codeSnap=await Promise.race([getDoc(doc(db,'scorerCodes',session.data().codeId)),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Scorer code check timed out.')),10000))]);
+   if(!codeSnap.exists()||codeSnap.data().enabled!==true){
+     $('login').classList.remove('hidden');say('This scorer code is disabled. Ask the admin for an active code.');
+     return;
+   }
+   currentName=session.data().displayName||codeSnap.data().displayName||'Scorer';
+   await loadWork(user,currentName);
+ }catch(e){
+   $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
+   say('Could not restore saved session: '+e.message+' You can retry with your scorer name and code.');
+ }
 });
 let pendingMatch=null;
 function showOpeningPage(){if(!pendingMatch)return;$('newMatchTab').classList.add('hidden');$('teamsTab').classList.add('hidden');$('historyTab').classList.add('hidden');$('settingsTab').classList.add('hidden');$('bottomNav').classList.add('hidden');$('openingPage').classList.remove('hidden');$('scorePanel').classList.add('hidden');$('openingStriker').value='';$('openingNonStriker').value='';$('openingBowler').value='';document.querySelectorAll('#openingPage input').forEach(i=>i.setAttribute('list','openingPlayerSuggestions'));$('openingPage').style.display='block';window.scrollTo(0,0)}
