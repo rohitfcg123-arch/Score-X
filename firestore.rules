@@ -7,6 +7,18 @@ service cloud.firestore {
     function admin() { return signedIn() && request.auth.token.email == 'rohit.fcg123@gmail.com' && request.auth.token.email_verified == true; }
     function codeEnabled(codeId) { return exists(/databases/$(database)/documents/scorerCodes/$(codeId)) && get(/databases/$(database)/documents/scorerCodes/$(codeId)).data.enabled == true; }
     function activeScorer() { return signedIn() && exists(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)) && get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data.active == true && codeEnabled(get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data.codeId); }
+    function scorerOwnsMatch() {
+      let session = get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data;
+      return activeScorer() && (
+        resource.data.createdBy == request.auth.uid
+        || resource.data.get('createdByCodeId', '') == session.codeId
+        || (
+          resource.data.get('createdByCodeId', '') == ''
+          && resource.data.get('createdByEmail', '') == session.displayName
+          && request.resource.data.get('createdByCodeId', '') == session.codeId
+        )
+      );
+    }
 
     // Public users may only read published match scoreboards.
     match /matches/{matchId} {
@@ -16,11 +28,17 @@ service cloud.firestore {
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.teamA is string
           && request.resource.data.teamB is string);
+      // A scorer may update their own UID-owned matches, matches already linked
+      // to their secret code, or claim an older unlinked match with the same
+      // scorer display name. The first claim permanently binds it to that code.
       allow update: if admin()
-        || (activeScorer()
-          && resource.data.createdBy == request.auth.uid
+        || (scorerOwnsMatch()
           && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.updatedBy == request.auth.uid);
+          && request.resource.data.updatedBy == request.auth.uid
+          && (
+            resource.data.get('createdByCodeId', '') == ''
+            || request.resource.data.get('createdByCodeId', '') == resource.data.get('createdByCodeId', '')
+          ));
       allow delete: if admin();
     }
 
