@@ -259,7 +259,7 @@ async function ball(run,kind='normal'){
   const bw={...(bowlerStats[bowler]||{runs:0,balls:0,wickets:0,maidens:0})};
   if(!bye&&!legbye)bw.runs=(bw.runs||0)+extraPenalty+((extraType==='normal'||noBall)?runs:0);
   if(legal)bw.balls=(bw.balls||0)+1;
-  if(wicket)bw.wickets=(bw.wickets||0)+1;
+  if(wicket&&extraType==='normal')bw.wickets=(bw.wickets||0)+1; // Run-outs on wides/no-balls/byes/leg-byes are not credited to the bowler.
   bowlerStats[bowler]=bw;
   let strikerName=batter,nonStrikerName=otherBatter;
   const rotateRuns=(wide||noBall)?runs+extraPenalty:runs;
