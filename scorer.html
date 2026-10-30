@@ -229,71 +229,66 @@ function stopSelectedMatchSync(){if(stopSelectedMatch){stopSelectedMatch();stopS
 function selectMatch(m){if(!m)return;const isSameMatch=selectedId===m.id;if(!isSameMatch){stopSelectedMatchSync();}selectedId=m.id;selectedMatch=m;if(!isSameMatch){const watchingId=m.id;stopSelectedMatch=onSnapshot(doc(db,'matches',watchingId),snap=>{if(!snap.exists()||selectedId!==watchingId)return;const fresh={id:snap.id,...snap.data()};if(!selectedMatch||JSON.stringify({...selectedMatch,updatedAt:null})!==JSON.stringify({...fresh,updatedAt:null}))selectMatch(fresh);},err=>{console.error('Selected match live sync failed',err);say('Live sync failed ('+(err.code||'error')+'): '+err.message);});}if(!isSameMatch)activeScoreTab='score';$('newMatchTab').classList.add('hidden');$('teamsTab').classList.add('hidden');$('historyTab').classList.add('hidden');$('openingPage').classList.add('hidden');$('bottomNav').classList.add('hidden');$('scorePanel').classList.remove('hidden');$('matchTitle').textContent=m.teamA+' v/s '+m.teamB;$('inningsTitle').textContent=(m.battingTeam||m.teamA)+', '+(m.innings||1)+(m.innings===1?'st':m.innings===2?'nd':'th')+' inning';$('scoreline').textContent=(m.score||0)+' - '+(m.wickets||0);$('overline').textContent='('+Math.floor((m.balls||0)/6)+'.'+((m.balls||0)%6)+')';$('crrValue').textContent=((m.score||0)/Math.max((m.balls||0)/6,0.01)).toFixed(2);$('strikerName').value=m.strikerName||'';$('nonStrikerName').value=m.nonStrikerName||'';$('bowlerName').value=m.bowlerName||'';const bs=m.battingStats||{},s=bs[m.strikerName]||{runs:0,balls:0,fours:0,sixes:0},n=bs[m.nonStrikerName]||{runs:0,balls:0,fours:0,sixes:0},bw=(m.bowlerStats||{})[m.bowlerName]||{runs:0,balls:0,wickets:0};const set=(id,v)=>$(id).textContent=String(v);set('strikerRowName',(m.strikerName||'Batsman 1')+'*');set('nonStrikerRowName',m.nonStrikerName||'Batsman 2');set('strikerRuns',s.runs||0);set('strikerBalls',s.balls||0);set('strikerFours',s.fours||0);set('strikerSixes',s.sixes||0);set('strikerSR',((s.runs||0)/Math.max(s.balls||0,0.01)*100).toFixed(2));set('nonStrikerRuns',n.runs||0);set('nonStrikerBalls',n.balls||0);set('nonStrikerFours',n.fours||0);set('nonStrikerSixes',n.sixes||0);set('nonStrikerSR',((n.runs||0)/Math.max(n.balls||0,0.01)*100).toFixed(2));set('bowlerRowName',m.bowlerName||'Bowler');set('bowlerOvers',Math.floor((bw.balls||0)/6)+'.'+((bw.balls||0)%6));set('bowlerRuns',bw.runs||0);set('bowlerWickets',bw.wickets||0);set('bowlerER',((bw.runs||0)/Math.max((bw.balls||0)/6,0.01)).toFixed(2));const recent=m.recentBalls||[];$('thisOverBalls').innerHTML=recent.slice(-6).map(x=>'<span class="overBall">'+esc(x.label)+'</span>').join('')||'No balls yet';const ready=!!(m.strikerName&&m.nonStrikerName&&m.bowlerName);$('playersStatus').textContent=ready?'Players saved. Ready to score.':'Enter both batsmen and the bowler before recording a delivery.';const canScore=ready&&m.status==='live';document.querySelectorAll('[data-run],#extraWide,#extraNoBall,#extraByes,#extraLegByes,#extraWicket').forEach(b=>b.disabled=!canScore);$('inningsBtn').textContent=(Number(m.innings||1)===1?'End innings / Next innings':'Finish match');$('inningsBtn').disabled=m.status==='completed';$('endBtn').disabled=m.status==='completed';$('targetline').textContent=m.target?'Target: '+m.target+' runs':'';setScoreTab(activeScoreTab);if(!isSameMatch)say(m.status==='live'?'Live match connected · Ready to score.':'Match loaded · '+String(m.status||'saved'));window.scrollTo(0,0);}
 
 async function ball(run,kind='normal'){
- if(!selectedId||!currentUser||scoringPending){say('Scoring is not ready yet. Check login and match status.');return;}
- if(!selectedMatch||selectedMatch.status!=='live'){say('This match is not live. Refresh the match or start the next innings.');return;}
- say('Saving '+(kind==='normal'?run:kind)+'…');
- if(!$('strikerName').value.trim()||!$('nonStrikerName').value.trim()||!$('bowlerName').value.trim()){
-  say('Before the next delivery, enter both batsmen and the current bowler, then tap Save player names.');return;
- }
- if(selectedMatch&&($('strikerName').value.trim()!==String(selectedMatch.strikerName||'').trim()||$('nonStrikerName').value.trim()!==String(selectedMatch.nonStrikerName||'').trim()||$('bowlerName').value.trim()!==String(selectedMatch.bowlerName||'').trim())){say('Player names were changed. Tap Save player names before scoring.');return;}
+ if(!selectedId||!currentUser||scoringPending){say('Scoring is not ready yet.');return;}
+ if(!selectedMatch||selectedMatch.status!=='live'){say('This match is not live.');return;}
+ if(!$('strikerName').value.trim()||!$('nonStrikerName').value.trim()||!$('bowlerName').value.trim()){say('Save both batsmen and the bowler before scoring.');return;}
+ if($('strikerName').value.trim()!==String(selectedMatch.strikerName||'').trim()||$('nonStrikerName').value.trim()!==String(selectedMatch.nonStrikerName||'').trim()||$('bowlerName').value.trim()!==String(selectedMatch.bowlerName||'').trim()){say('Player names changed. Tap Save player names first.');return;}
+ const settings=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();
+ const wide=$('extraWide').checked,noBall=$('extraNoBall').checked,bye=$('extraByes').checked,legbye=$('extraLegByes').checked,wicket=$('extraWicket').checked;
+ const selected=[wide,noBall,bye,legbye].filter(Boolean).length;
+ if(selected>1){say('Choose only one extra type per delivery.');return;}
+ if(wide&&settings.wide===false){say('Wide balls are disabled in Match Settings.');return;}
+ if(noBall&&settings.noBall===false){say('No balls are disabled in Match Settings.');return;}
+ const extraType=wide?'wide':noBall?'noball':bye?'bye':legbye?'legbye':'normal';
+ const runs=Math.max(0,Number(run)||0);
  scoringPending=true;
  try{
   const m={...selectedMatch};
-   if(m.status!=='live')throw Error('Match is not live. Use Next innings or Finish match.');
-   if(!m.strikerName||!m.nonStrikerName||!m.bowlerName)throw Error('Save both batsmen and the bowler before scoring.');
-   const settings=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();
-   const legal=kind==='wide'?!Boolean(settings.wideReball??true):kind==='noball'?!Boolean(settings.noBallReball??true):true;
-   const beforeScore=Number(m.score||0),beforeWickets=Number(m.wickets||0),beforeBalls=Number(m.balls||0),innings=Number(m.innings||1);
-   const batter=$('strikerName').value.trim(),otherBatter=$('nonStrikerName').value.trim(),bowler=$('bowlerName').value.trim();
-   const score=beforeScore+(kind==='wicket'?0:Number(run||0)),wickets=beforeWickets+(kind==='wicket'?1:0),balls=beforeBalls+(legal?1:0);
-   const battingStats={...(m.battingStats||{})},bowlerStats={...(m.bowlerStats||{})};
-   const st={...(battingStats[batter]||{runs:0,balls:0,fours:0,sixes:0})};
-   if(legal)st.balls=(st.balls||0)+1;
-   if(kind==='normal'){st.runs=(st.runs||0)+Number(run||0);if(Number(run)===4)st.fours=(st.fours||0)+1;if(Number(run)===6)st.sixes=(st.sixes||0)+1;}
-   battingStats[batter]=st;
-   const bw={...(bowlerStats[bowler]||{runs:0,balls:0,wickets:0,maidens:0})};
-   if(!['bye','legbye','wicket'].includes(kind))bw.runs=(bw.runs||0)+Number(run||0);
-   if(legal)bw.balls=(bw.balls||0)+1;
-   if(kind==='wicket')bw.wickets=(bw.wickets||0)+1;
-   bowlerStats[bowler]=bw;
-   let strikerName=batter,nonStrikerName=otherBatter;
-   if(['normal','bye','legbye'].includes(kind)&&Number(run)%2===1){strikerName=otherBatter;nonStrikerName=batter;}
-   if(legal&&balls>0&&balls%6===0){const swap=strikerName;strikerName=nonStrikerName;nonStrikerName=swap;}
-   const label=kind==='wicket'?'W':kind==='wide'?'Wd':kind==='noball'?'Nb':kind==='bye'?'B':kind==='legbye'?'Lb':String(run);
-   const event={innings,over:Math.floor(beforeBalls/6),ball:(beforeBalls%6)+1,kind,run:Number(run||0),runsAdded:score-beforeScore,label,striker:batter,bowler,score,wickets,at:new Date().toISOString()};
-   const ballHistory=[...(m.ballHistory||[]),event].slice(-600);
-   const recentBalls=ballHistory.filter(x=>Number(x.innings||1)===innings).slice(-6);
-   const maxBalls=Number(m.maxOvers||m.overs||20)*6;
-   const inningsEnded=wickets>=Math.max(1,Number(m.playersPerTeam||11)-1)||balls>=maxBalls;
-   const reachedTarget=innings===2&&m.target!=null&&score>=Number(m.target);
-   const completed=innings===2&&(inningsEnded||reachedTarget);
-   const status=completed?'completed':(inningsEnded?'innings_break':'live');
-   let statusText=status==='innings_break'?'Innings complete':status==='completed'?(reachedTarget?(m.battingTeam+' won by '+Math.max(0,10-wickets)+' wickets'):(score===Number(m.target||0)-1?'Match tied':((m.teamA===m.battingTeam?m.teamB:m.teamA)+' won by '+Math.max(0,Number(m.target||1)-1-score)+' runs'))):(Math.floor(balls/6)+'.'+(balls%6)+' overs · '+score+'/'+wickets);
-   if(innings===2&&m.target)statusText=(completed?statusText+' · Target '+m.target:'Target '+m.target+' · '+statusText);
-   const teamAScore=m.teamA===m.battingTeam?score:(m.teamAScore??null),teamBScore=m.teamB===m.battingTeam?score:(m.teamBScore??null);
-   const previous={score:m.score??0,wickets:m.wickets??0,balls:m.balls??0,innings:m.innings??1,status:m.status,statusText:m.statusText||'',teamAScore:m.teamAScore??null,teamBScore:m.teamBScore??null,battingStats:m.battingStats||{},bowlerStats:m.bowlerStats||{},recentBalls:m.recentBalls||[],ballHistory:m.ballHistory||[],strikerName:m.strikerName||'',nonStrikerName:m.nonStrikerName||'',bowlerName:m.bowlerName||'',target:m.target??null};
-   let patch={score,wickets,balls,[m.teamA===m.battingTeam?'teamAScore':'teamBScore']:score,teamAScore,teamBScore,status,statusText,strikerName,nonStrikerName,bowlerName:bowler,battingStats,bowlerStats,recentBalls,ballHistory,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind,run:Number(run||0),by:currentUser.uid,email:currentName,at:new Date().toISOString(),striker:batter,nonStriker:otherBatter,bowler},previous};
-   const overCompleted=legal&&balls>0&&balls%6===0&&!inningsEnded&&!completed;
-   let nextBowlerName='';
-   if(overCompleted){
-    const entered=prompt('Over complete! Enter the next bowler name:','');
-    if(entered&&entered.trim()&&entered.trim()!==bowler){
-     nextBowlerName=entered.trim();
-     const nextStats={...(bowlerStats[nextBowlerName]||{runs:0,balls:0,wickets:0,maidens:0})};
-     bowlerStats[nextBowlerName]=nextStats;
-     patch={...patch,bowlerName:nextBowlerName,bowlerStats,lastAction:{kind:'over-complete',previousBowler:bowler,nextBowler:nextBowlerName,by:currentUser.uid,email:currentName,at:new Date().toISOString()}};
-    }else if(entered&&entered.trim()===bowler){
-     say('A different bowler is required for the next over. Current bowler remains selected.');
-    }
-   }
-   const updated={...m,...patch,updatedAt:new Date()};
-   selectMatch({...updated,id:selectedId});
-   say(overCompleted?'Over complete · saving next bowler and score…':'Score shown instantly · syncing to Viewer…');
-   await updateDoc(doc(db,'matches',selectedId),patch);
-   say(updated.status==='completed'?'Match completed. Viewer received the final score.':(overCompleted&&nextBowlerName?'Next bowler saved. Viewer is live.':'Score saved. Viewer is live.'));
+  const legal=extraType!=='wide'&&extraType!=='noball';
+  const beforeScore=Number(m.score||0),beforeWickets=Number(m.wickets||0),beforeBalls=Number(m.balls||0),innings=Number(m.innings||1);
+  const batter=String(m.strikerName||'').trim(),otherBatter=String(m.nonStrikerName||'').trim(),bowler=String(m.bowlerName||'').trim();
+  const extraPenalty=(wide||noBall)?1:0;
+  const totalAdded=extraPenalty+runs;
+  const score=beforeScore+totalAdded,wickets=beforeWickets+(wicket?1:0),balls=beforeBalls+(legal?1:0);
+  const battingStats={...(m.battingStats||{})},bowlerStats={...(m.bowlerStats||{})};
+  const st={...(battingStats[batter]||{runs:0,balls:0,fours:0,sixes:0})};
+  if(legal)st.balls=(st.balls||0)+1;
+  const batRuns=(extraType==='normal'||noBall)?runs:0;
+  if(batRuns){st.runs=(st.runs||0)+batRuns;if(batRuns===4)st.fours=(st.fours||0)+1;if(batRuns===6)st.sixes=(st.sixes||0)+1;}
+  battingStats[batter]=st;
+  const bw={...(bowlerStats[bowler]||{runs:0,balls:0,wickets:0,maidens:0})};
+  if(!bye&&!legbye)bw.runs=(bw.runs||0)+extraPenalty+((extraType==='normal'||noBall)?runs:0);
+  if(legal)bw.balls=(bw.balls||0)+1;
+  if(wicket)bw.wickets=(bw.wickets||0)+1;
+  bowlerStats[bowler]=bw;
+  let strikerName=batter,nonStrikerName=otherBatter;
+  const rotateRuns=(wide||noBall)?runs+extraPenalty:runs;
+  if(rotateRuns%2===1){strikerName=otherBatter;nonStrikerName=batter;}
+  if(legal&&balls>0&&balls%6===0){const swap=strikerName;strikerName=nonStrikerName;nonStrikerName=swap;}
+  const kindLabel=wide?'Wide':noBall?'No ball':bye?'Bye':legbye?'Leg bye':'Run';
+  const label=(wicket?'W+':'')+(wide?'Wd':noBall?'Nb':bye?'B':legbye?'Lb':String(runs));
+  const event={innings,over:Math.floor(beforeBalls/6),ball:(beforeBalls%6)+1,kind:extraType,wicket,run:runs,runsAdded:totalAdded,label,striker:batter,bowler,score,wickets,at:new Date().toISOString()};
+  const ballHistory=[...(m.ballHistory||[]),event].slice(-600),recentBalls=ballHistory.filter(x=>Number(x.innings||1)===innings).slice(-6);
+  const maxBalls=Number(m.maxOvers||m.overs||20)*6;
+  const inningsEnded=wickets>=Math.max(1,Number(m.playersPerTeam||11)-1)||balls>=maxBalls;
+  const reachedTarget=innings===2&&m.target!=null&&score>=Number(m.target);
+  const completed=innings===2&&(inningsEnded||reachedTarget);
+  const status=completed?'completed':(inningsEnded?'innings_break':'live');
+  let statusText=status==='innings_break'?'Innings complete':status==='completed'?(reachedTarget?(m.battingTeam+' won by '+Math.max(0,10-wickets)+' wickets'):(score===Number(m.target||0)-1?'Match tied':((m.teamA===m.battingTeam?m.teamB:m.teamA)+' won by '+Math.max(0,Number(m.target||1)-1-score)+' runs'))):(Math.floor(balls/6)+'.'+(balls%6)+' overs · '+score+'/'+wickets);
+  if(innings===2&&m.target)statusText=(completed?statusText+' · Target '+m.target:'Target '+m.target+' · '+statusText);
+  const teamAScore=m.teamA===m.battingTeam?score:(m.teamAScore??null),teamBScore=m.teamB===m.battingTeam?score:(m.teamBScore??null);
+  const previous={score:m.score??0,wickets:m.wickets??0,balls:m.balls??0,innings:m.innings??1,status:m.status,statusText:m.statusText||'',teamAScore:m.teamAScore??null,teamBScore:m.teamBScore??null,battingStats:m.battingStats||{},bowlerStats:m.bowlerStats||{},recentBalls:m.recentBalls||[],ballHistory:m.ballHistory||[],strikerName:m.strikerName||'',nonStrikerName:m.nonStrikerName||'',bowlerName:m.bowlerName||'',target:m.target??null};
+  let patch={score,wickets,balls,[m.teamA===m.battingTeam?'teamAScore':'teamBScore']:score,teamAScore,teamBScore,status,statusText,strikerName,nonStrikerName,bowlerName:bowler,battingStats,bowlerStats,recentBalls,ballHistory,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind:extraType,wicket,run:runs,runsAdded:totalAdded,by:currentUser.uid,email:currentName,at:new Date().toISOString(),striker:batter,nonStriker:otherBatter,bowler},previous};
+  const overCompleted=legal&&balls>0&&balls%6===0&&!inningsEnded&&!completed;
+  let nextBowlerName='';
+  if(overCompleted){const entered=prompt('Over complete! Enter the next bowler name:','');if(entered&&entered.trim()&&entered.trim()!==bowler){nextBowlerName=entered.trim();bowlerStats[nextBowlerName]={...(bowlerStats[nextBowlerName]||{runs:0,balls:0,wickets:0,maidens:0})};patch={...patch,bowlerName:nextBowlerName,bowlerStats,lastAction:{kind:'over-complete',previousBowler:bowler,nextBowler:nextBowlerName,by:currentUser.uid,email:currentName,at:new Date().toISOString()}};}}
+  const updated={...m,...patch,updatedAt:new Date()};
+  selectMatch({...updated,id:selectedId});say('Score shown instantly · syncing to Viewer…');
+  await updateDoc(doc(db,'matches',selectedId),patch);
+  say(updated.status==='completed'?'Match completed. Viewer received the final score.':'Score saved. Viewer is live.');
   ['extraWide','extraNoBall','extraByes','extraLegByes','extraWicket'].forEach(id=>$(id).checked=false);
- }catch(e){console.error('Score-X ball update failed',e);say('Score save failed ('+(e.code||'error')+'): '+(e.message||String(e))+' · Check login/session and Firestore Rules.');if(selectedId){const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}}
- finally{scoringPending=false;const ready=!!(selectedMatch&&selectedMatch.strikerName&&selectedMatch.nonStrikerName&&selectedMatch.bowlerName&&selectedMatch.status==='live');document.querySelectorAll('[data-run],#extraWide,#extraNoBall,#extraByes,#extraLegByes,#extraWicket').forEach(b=>b.disabled=!ready);}
+ }catch(e){console.error('Score-X ball update failed',e);say('Score save failed ('+(e.code||'error')+'): '+(e.message||String(e)));const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}
+ finally{scoringPending=false;const ready=!!(selectedMatch&&selectedMatch.strikerName&&selectedMatch.nonStrikerName&&selectedMatch.bowlerName&&selectedMatch.status==='live');document.querySelectorAll('[data-run],#extraWide,#extraNoBall,#extraByes,#extraLegByes,#extraWicket').forEach(el=>el.disabled=!ready);}
 }
 document.querySelectorAll('[data-run]').forEach(b=>{b.type='button';b.addEventListener('click',()=>{if(b.disabled)return;ball(Number(b.dataset.run));});});$('backScoring').onclick=()=>{if(confirm('Leave this match screen? The match will remain saved.')){stopSelectedMatchSync();selectedId=null;selectedMatch=null;$('scorePanel').classList.add('hidden');$('work').classList.remove('hidden');$('bottomNav').classList.remove('hidden');showTab('historyTab')}};
 // Keep Android/browser Back inside the scorer before leaving the website.
@@ -314,7 +309,7 @@ window.addEventListener('popstate',()=>{
  // Keep Android/browser Back within Score-X and route to the website home when no inner screen remains.
  window.history.pushState({scoreXInternal:true},'',location.href);
 });$('scoreRefresh').onclick=async()=>{if(selectedId){const s=await getDoc(doc(db,'matches',selectedId));if(s.exists())selectMatch({id:s.id,...s.data()})}};
-$('extraWide').onchange=()=>{if($('extraWide').checked){const v=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();if(v.wide===false){$('extraWide').checked=false;say('Wide balls are disabled in Match Settings.');return}ball(Number(v.wideRuns??1),'wide')}};$('extraNoBall').onchange=()=>{if($('extraNoBall').checked){const v=(()=>{try{return JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}')}catch{return {}}})();if(v.noBall===false){$('extraNoBall').checked=false;say('No balls are disabled in Match Settings.');return}ball(Number(v.noBallRuns??1),'noball')}};$('extraByes').onchange=()=>{if($('extraByes').checked)ball(1,'bye')};$('extraLegByes').onchange=()=>{if($('extraLegByes').checked)ball(1,'legbye')};$('extraWicket').onchange=()=>{if($('extraWicket').checked)ball(0,'wicket')};$('retireBtn').onclick=async()=>{
+['extraWide','extraNoBall','extraByes','extraLegByes','extraWicket'].forEach(id=>$(id).onchange=()=>{if($(id).checked){['extraWide','extraNoBall','extraByes','extraLegByes'].filter(other=>other!==id).forEach(other=>$(other).checked=false);say('Now choose the run (0–6). This records one delivery with the selected extra/wicket.');}else say('Extra/wicket selection cleared.');});$('retireBtn').onclick=async()=>{
  if(!selectedId||!currentUser||!selectedMatch)return;
  const m=selectedMatch;
  if(m.status!=='live'){say('Retire is available only during a live innings.');return;}
