@@ -140,17 +140,7 @@ $('loginBtn').onclick=async()=>{
  let stage='anonymous sign-in';
  try{
    await authReady;
-   if(auth.currentUser && auth.currentUser.isAnonymous){
-     const oldSession=await getDoc(doc(db,'scorerSessions',auth.currentUser.uid)).catch(()=>null);
-     if(oldSession&&oldSession.exists()&&oldSession.data().active===true){
-       const oldCode=oldSession.data().codeId;
-       if(oldCode===code && String(oldSession.data().displayName||'').trim().toLowerCase()===displayName.toLowerCase()){
-         const codeSnap=await getDoc(doc(db,'scorerCodes',code));
-         if(codeSnap.exists()&&codeSnap.data().enabled===true){currentName=oldSession.data().displayName;await loadWork(auth.currentUser,currentName);return;}
-       }
-     }
-     await signOut(auth);
-   } else if(auth.currentUser) await signOut(auth);
+   if(auth.currentUser) await signOut(auth);
    const cred=await signInAnonymously(auth);
    stage='reading scorer code';
    const codeSnap=await getDoc(doc(db,'scorerCodes',code));
@@ -166,40 +156,14 @@ $('loginBtn').onclick=async()=>{
 };
 $('logoutBtn').onclick=async()=>{try{if(stopList){stopList();stopList=null}stopSelectedMatchSync();await signOut(auth);currentUser=null;currentName='';$('work').classList.add('hidden');$('login').classList.remove('hidden');$('bottomNav').classList.add('hidden');say('Signed out. Enter your name and code to continue.')}catch(e){say('Sign-out failed: '+e.message)}};
 let authStateResolved=false;
-onAuthStateChanged(auth,async user=>{
+onAuthStateChanged(auth,user=>{
  authStateResolved=true;
- if(loginPending)return;
- if(!user){
-   currentUser=null;currentName='';
-   $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
-   if(stopList){stopList();stopList=null}
-   say('Enter the scorer name and active secret code.');
-   return;
- }
- // Keep the login form hidden while Firebase restores and verifies the saved session.
- $('login').classList.add('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
- say('Restoring saved scorer session… Please wait.');
- try{
-   const withTimeout=(promise,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(label+' timed out. Check internet connection and Firebase status, then reload.')),10000))]);
-   const session=await withTimeout(getDoc(doc(db,'scorerSessions',user.uid)),'Scorer session check');
-   if(!session.exists()||session.data().active!==true){
-     $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
-     say('Saved scorer session was not found. Enter your name and code.');
-     return;
-   }
-   const codeSnap=await withTimeout(getDoc(doc(db,'scorerCodes',session.data().codeId)),'Scorer code check');
-   if(!codeSnap.exists()||codeSnap.data().enabled!==true){
-     await signOut(auth);
-     $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
-     say('This scorer code is disabled. Ask the admin for an active code.');
-     return;
-   }
-   currentName=session.data().displayName||codeSnap.data().displayName||'Scorer';
-   await loadWork(user,currentName);
- }catch(e){
-   $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
-   say('Could not restore scorer session: '+e.message+'. Check that the latest Firestore Rules are published.');
- }
+ currentUser=null;currentName='';
+ $('login').classList.remove('hidden');
+ $('work').classList.add('hidden');
+ $('bottomNav').classList.add('hidden');
+ if(stopList){stopList();stopList=null;}
+ say(user?'Firebase is connected. Enter your scorer name and active secret code.':'Enter the scorer name and active secret code.');
 });
 let pendingMatch=null;
 function showOpeningPage(){if(!pendingMatch)return;$('newMatchTab').classList.add('hidden');$('teamsTab').classList.add('hidden');$('historyTab').classList.add('hidden');$('settingsTab').classList.add('hidden');$('bottomNav').classList.add('hidden');$('openingPage').classList.remove('hidden');$('scorePanel').classList.add('hidden');$('openingStriker').value='';$('openingNonStriker').value='';$('openingBowler').value='';document.querySelectorAll('#openingPage input').forEach(i=>i.setAttribute('list','openingPlayerSuggestions'));$('openingPage').style.display='block';window.scrollTo(0,0)}
