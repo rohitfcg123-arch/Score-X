@@ -6,8 +6,10 @@ import { collection, onSnapshot, query, orderBy } from 'https://www.gstatic.com/
 const root=document.querySelector('#matches'),connection=document.querySelector('#connection');
 const sixAudio=new Audio('./assets/sounds/six-1.mp3');sixAudio.preload='auto';let soundEnabled=false;const previousBallCounts=new Map();let firstSnapshot=true;
 const soundToggle=document.querySelector('#soundToggle'),soundStatus=document.querySelector('#soundStatus');
-soundToggle.addEventListener('click',async()=>{soundEnabled=!soundEnabled;soundToggle.textContent=soundEnabled?'🔊 Sound ON · Tap to mute':'🔇 Sound OFF · Tap to enable';soundToggle.setAttribute('aria-pressed',String(soundEnabled));soundStatus.textContent=soundEnabled?'Six sound enabled. A sound will play when a six is scored.':'Sound muted.';if(soundEnabled){try{sixAudio.muted=true;await sixAudio.play();sixAudio.pause();sixAudio.currentTime=0;sixAudio.muted=false;}catch(e){soundEnabled=false;sixAudio.muted=false;soundToggle.textContent='🔇 Sound OFF · Tap to enable';soundToggle.setAttribute('aria-pressed','false');soundStatus.textContent='Tap again to allow sound in your browser.';}}});
-function playSixSound(){if(!soundEnabled)return;sixAudio.pause();sixAudio.currentTime=0;sixAudio.play().catch(()=>{soundStatus.textContent='Tap Sound ON again to allow playback.';});}
+function renderSoundState(){soundToggle.textContent=soundEnabled?'🔊 Sound ON · Tap to mute':'🔇 Sound OFF · Tap to enable';soundToggle.setAttribute('aria-pressed',String(soundEnabled));soundStatus.textContent=soundEnabled?'Sound is ON. Sixes will play when detected.':'Sound is OFF.';}
+soundToggle.addEventListener('click',()=>{soundEnabled=!soundEnabled;renderSoundState();});
+sixAudio.addEventListener('error',()=>{soundStatus.textContent='Sound file could not load. Check assets/sounds/six-1.mp3.';});
+function playSixSound(){if(!soundEnabled)return;const audio=sixAudio.cloneNode();audio.volume=1;audio.play().catch(()=>{soundStatus.textContent='Browser blocked sound. Check media volume or tap Sound ON again.';});}
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const matchCache=new Map();
 function renderDetails(m,tab){
