@@ -178,15 +178,16 @@ onAuthStateChanged(auth,async user=>{
  }
  // Keep the login form hidden while Firebase restores and verifies the saved session.
  $('login').classList.add('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
- say('Restoring saved scorer session…');
+ say('Restoring saved scorer session… Please wait.');
  try{
-   const session=await getDoc(doc(db,'scorerSessions',user.uid));
+   const withTimeout=(promise,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(label+' timed out. Check internet connection and Firebase status, then reload.')),10000))]);
+   const session=await withTimeout(getDoc(doc(db,'scorerSessions',user.uid)),'Scorer session check');
    if(!session.exists()||session.data().active!==true){
      $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
      say('Saved scorer session was not found. Enter your name and code.');
      return;
    }
-   const codeSnap=await getDoc(doc(db,'scorerCodes',session.data().codeId));
+   const codeSnap=await withTimeout(getDoc(doc(db,'scorerCodes',session.data().codeId)),'Scorer code check');
    if(!codeSnap.exists()||codeSnap.data().enabled!==true){
      await signOut(auth);
      $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
