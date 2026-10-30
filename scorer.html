@@ -272,12 +272,25 @@ async function ball(run,kind='normal'){
    if(innings===2&&m.target)statusText=(completed?statusText+' · Target '+m.target:'Target '+m.target+' · '+statusText);
    const teamAScore=m.teamA===m.battingTeam?score:(m.teamAScore??null),teamBScore=m.teamB===m.battingTeam?score:(m.teamBScore??null);
    const previous={score:m.score??0,wickets:m.wickets??0,balls:m.balls??0,innings:m.innings??1,status:m.status,statusText:m.statusText||'',teamAScore:m.teamAScore??null,teamBScore:m.teamBScore??null,battingStats:m.battingStats||{},bowlerStats:m.bowlerStats||{},recentBalls:m.recentBalls||[],ballHistory:m.ballHistory||[],strikerName:m.strikerName||'',nonStrikerName:m.nonStrikerName||'',bowlerName:m.bowlerName||'',target:m.target??null};
-   const patch={score,wickets,balls,[m.teamA===m.battingTeam?'teamAScore':'teamBScore']:score,teamAScore,teamBScore,status,statusText,strikerName,nonStrikerName,bowlerName:bowler,battingStats,bowlerStats,recentBalls,ballHistory,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind,run:Number(run||0),by:currentUser.uid,email:currentName,at:new Date().toISOString(),striker:batter,nonStriker:otherBatter,bowler},previous};
+   let patch={score,wickets,balls,[m.teamA===m.battingTeam?'teamAScore':'teamBScore']:score,teamAScore,teamBScore,status,statusText,strikerName,nonStrikerName,bowlerName:bowler,battingStats,bowlerStats,recentBalls,ballHistory,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind,run:Number(run||0),by:currentUser.uid,email:currentName,at:new Date().toISOString(),striker:batter,nonStriker:otherBatter,bowler},previous};
+   const overCompleted=legal&&balls>0&&balls%6===0&&!inningsEnded&&!completed;
+   let nextBowlerName='';
+   if(overCompleted){
+    const entered=prompt('Over complete! Enter the next bowler name:','');
+    if(entered&&entered.trim()&&entered.trim()!==bowler){
+     nextBowlerName=entered.trim();
+     const nextStats={...(bowlerStats[nextBowlerName]||{runs:0,balls:0,wickets:0,maidens:0})};
+     bowlerStats[nextBowlerName]=nextStats;
+     patch={...patch,bowlerName:nextBowlerName,bowlerStats,lastAction:{kind:'over-complete',previousBowler:bowler,nextBowler:nextBowlerName,by:currentUser.uid,email:currentName,at:new Date().toISOString()}};
+    }else if(entered&&entered.trim()===bowler){
+     say('A different bowler is required for the next over. Current bowler remains selected.');
+    }
+   }
    const updated={...m,...patch,updatedAt:new Date()};
    selectMatch({...updated,id:selectedId});
-   say('Score shown instantly · syncing to Viewer…');
+   say(overCompleted?'Over complete · saving next bowler and score…':'Score shown instantly · syncing to Viewer…');
    await updateDoc(doc(db,'matches',selectedId),patch);
-   say(updated.status==='completed'?'Match completed. Viewer received the final score.':'Score saved. Viewer is live.');
+   say(updated.status==='completed'?'Match completed. Viewer received the final score.':(overCompleted&&nextBowlerName?'Next bowler saved. Viewer is live.':'Score saved. Viewer is live.'));
   ['extraWide','extraNoBall','extraByes','extraLegByes','extraWicket'].forEach(id=>$(id).checked=false);
  }catch(e){console.error('Score-X ball update failed',e);say('Score save failed ('+(e.code||'error')+'): '+(e.message||String(e))+' · Check login/session and Firestore Rules.');if(selectedId){const snap=await getDoc(doc(db,'matches',selectedId)).catch(()=>null);if(snap&&snap.exists())selectMatch({id:snap.id,...snap.data()});}}
  finally{scoringPending=false;const ready=!!(selectedMatch&&selectedMatch.strikerName&&selectedMatch.nonStrikerName&&selectedMatch.bowlerName&&selectedMatch.status==='live');document.querySelectorAll('[data-run],#extraWide,#extraNoBall,#extraByes,#extraLegByes,#extraWicket').forEach(b=>b.disabled=!ready);}
