@@ -143,7 +143,7 @@ async function loadWork(user,name,codeId=''){
          if(!m.createdByCodeId&&!m._claimPending){
            m._claimPending=true;
            updateDoc(doc(db,'matches',m.id),{createdByCodeId:currentCodeId,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()})
-             .catch(e=>console.warn('Legacy match ownership link will retry after Firestore Rules are published:',m.id,e))
+             .catch(e=>{console.warn('Legacy match ownership link will retry after Firestore Rules are published:',m.id,e);if(e.code==='permission-denied')say('History loaded. Publish the latest Firestore Rules from the Score-X repository to enable scoring of older matches.');})
              .finally(()=>{const item=matchHistory.find(x=>x.id===m.id);if(item)delete item._claimPending;});
          }
        });
