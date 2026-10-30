@@ -7,6 +7,10 @@ service cloud.firestore {
     function admin() { return signedIn() && request.auth.token.email == 'rohit.fcg123@gmail.com' && request.auth.token.email_verified == true; }
     function codeEnabled(codeId) { return exists(/databases/$(database)/documents/scorerCodes/$(codeId)) && get(/databases/$(database)/documents/scorerCodes/$(codeId)).data.enabled == true; }
     function activeScorer() { return signedIn() && exists(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)) && get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data.active == true && codeEnabled(get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data.codeId); }
+    function scorerCanDeleteMatch() {
+      let session = get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data;
+      return activeScorer() && (resource.data.createdBy == request.auth.uid || resource.data.get('createdByCodeId', '') == session.codeId);
+    }
     function scorerOwnsMatch() {
       let session = get(/databases/$(database)/documents/scorerSessions/$(request.auth.uid)).data;
       return activeScorer() && (
@@ -39,7 +43,7 @@ service cloud.firestore {
             resource.data.get('createdByCodeId', '') == ''
             || request.resource.data.get('createdByCodeId', '') == resource.data.get('createdByCodeId', '')
           ));
-      allow delete: if admin();
+      allow delete: if admin() || scorerCanDeleteMatch();
     }
 
     match /users/{uid} {
