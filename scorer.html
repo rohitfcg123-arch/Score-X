@@ -266,7 +266,7 @@ async function ball(run,kind='normal'){
   if(rotateRuns%2===1){strikerName=otherBatter;nonStrikerName=batter;}
   if(legal&&balls>0&&balls%6===0){const swap=strikerName;strikerName=nonStrikerName;nonStrikerName=swap;}
   const kindLabel=wide?'Wide':noBall?'No ball':bye?'Bye':legbye?'Leg bye':'Run';
-  const label=(wicket?'W+':'')+(wide?'Wd':noBall?'Nb':bye?'B':legbye?'Lb':String(runs));
+  const label=(bye?(runs+'B'):legbye?(runs+'lb'):wide?('Wd'+(runs?'+'+runs:'')):noBall?('Nb'+(runs?'+'+runs:'')):String(runs))+(wicket?'+W':'');
   const event={innings,over:Math.floor(beforeBalls/6),ball:(beforeBalls%6)+1,kind:extraType,wicket,run:runs,runsAdded:totalAdded,label,striker:batter,bowler,score,wickets,at:new Date().toISOString()};
   const ballHistory=[...(m.ballHistory||[]),event].slice(-600),recentBalls=ballHistory.filter(x=>Number(x.innings||1)===innings).slice(-6);
   const maxBalls=Number(m.maxOvers||m.overs||20)*6;
