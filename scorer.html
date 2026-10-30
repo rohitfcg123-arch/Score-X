@@ -477,7 +477,7 @@ async function publishScorerViewerMessage(clear=false){
  if(!clear&&!message){$('scorerViewerUpdateStatus').textContent='Enter a message first.';$('scorerViewerMessage').focus();return;}
  const publish=$('scorerPublishViewerUpdate'),clearBtn=$('scorerClearViewerUpdate');publish.disabled=true;clearBtn.disabled=true;
  try{
-  await updateDoc(doc(db,'matches',selectedId),{viewerMessage:message,viewerBreakType:type,viewerMessageUpdatedAt:serverTimestamp(),viewerMessageUpdatedBy:currentUser.uid,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});
+  await updateDoc(doc(db,'matches',selectedId),{viewerMessage:message,viewerBreakType:type,viewerMessageUpdatedAt:serverTimestamp(),viewerMessageUpdatedBy:currentUser.uid,createdByCodeId:currentCodeId,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});
   $('scorerViewerUpdateStatus').textContent=clear?'Viewer message cleared.':'Message published to the live Viewer.';
   if(clear){$('scorerViewerMessage').value='';$('scorerViewerBreakType').value='none';}
   say(clear?'Viewer message cleared.':'Viewer message published.');
