@@ -109,28 +109,58 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
     <div class="runButtons"><button data-run="0">0</button><button data-run="1">1</button><button data-run="2">2</button><button data-run="3">3</button><button data-run="4">4</button><button data-run="5">5</button><button data-run="6">6</button><button id="moreRunsBtn" type="button">•••</button></div>
   </div>
   <div class="panel playerEditPanel"><h3>Current players <span class="small">(required before scoring)</span></h3><div class="grid"><div><label>Striker / Batter 1 *</label><input id="strikerName" list="playerSuggestions" placeholder="Batsman on strike" maxlength="80"></div><div><label>Non-striker / Batter 2 *</label><input id="nonStrikerName" list="playerSuggestions" placeholder="Other batsman" maxlength="80"></div><div><label>Bowler *</label><input id="bowlerName" list="playerSuggestions" placeholder="Current bowler" maxlength="80"></div></div><div class="actions"><button id="savePlayersBtn" type="button">Save player names</button></div><p id="playersStatus" class="small">Enter both batsmen and the bowler before recording a delivery.</p></div>
-</div><div id="scoreboardView" class="scoreAltView hidden"></div><div id="oversView" class="scoreAltView hidden"></div><div id="chartView" class="scoreAltView hidden"></div></div></section><p id="message" class="notice">Restoring saved scorer session…</p></main><nav id="bottomNav" class="bottomNav hidden"><button data-tab="newMatchTab" class="active"><span>🏏</span>New Match</button><button data-tab="teamsTab"><span>👥</span>Teams</button><button data-tab="historyTab"><span>◷</span>History</button></nav><script type="module">
+</div><div id="scoreboardView" class="scoreAltView hidden"></div><div id="oversView" class="scoreAltView hidden"></div><div id="chartView" class="scoreAltView hidden"></div></div></section><p id="message" class="notice">Loading Scorer Desk…</p>
+<script>
+document.getElementById('message').textContent='Loading Scorer Desk…';
+window.addEventListener('error',function(e){var m=document.getElementById('message');if(m&&/scorer/i.test(location.pathname))m.textContent='Scorer Desk script error: '+(e.message||'Could not load Firebase modules. Reload the page.');});
+window.addEventListener('unhandledrejection',function(e){var m=document.getElementById('message');if(m)m.textContent='Scorer Desk startup error: '+(e.reason&&e.reason.message||e.reason||'Unknown error');});
+</script></main><nav id="bottomNav" class="bottomNav hidden"><button data-tab="newMatchTab" class="active"><span>🏏</span>New Match</button><button data-tab="teamsTab"><span>👥</span>Teams</button><button data-tab="historyTab"><span>◷</span>History</button></nav><script type="module">
 import {auth,db} from './firebase.js';
 import {signInAnonymously,onAuthStateChanged,signOut,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import {collection,addDoc,doc,setDoc,updateDoc,onSnapshot,query,where,orderBy,serverTimestamp,getDoc} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-const $=id=>document.getElementById(id);let currentUser=null,selectedId=null,selectedMatch=null,stopList=null,stopSelectedMatch=null,matchHistory=[],currentName='',loginPending=false,initializing=false,scoringPending=false,activeScoreTab='score';const authReady=setPersistence(auth,browserLocalPersistence).catch(e=>console.warn('Could not set local auth persistence:',e));
+const $=id=>document.getElementById(id);let currentUser=null,currentCodeId='',selectedId=null,selectedMatch=null,stopList=null,stopSelectedMatch=null,matchHistory=[],currentName='',loginPending=false,initializing=false,scoringPending=false,activeScoreTab='score';const authReady=setPersistence(auth,browserLocalPersistence).catch(e=>console.warn('Could not set local auth persistence:',e));
 const say=t=>{const msg=String(t??'');const main=$('message');if(main)main.textContent=msg;const live=$('scoreStatus');if(live&&!$('scorePanel').classList.contains('hidden')){live.textContent=msg;live.classList.toggle('error',/failed|error|denied|could not|invalid|not live/i.test(msg));live.classList.toggle('success',/saved|connected|started|updated|syncing|live/i.test(msg)&&!/failed|error|denied|could not/i.test(msg));}};let editingTeamOriginal='';function getSavedTeams(){try{const v=JSON.parse(localStorage.getItem('scorexTeams')||'[]');return Array.isArray(v)?v:[]}catch{return []}}function storeSavedTeams(v){localStorage.setItem('scorexTeams',JSON.stringify(v));renderTeams();refreshPlayerSuggestions()}function renderTeams(){const list=getSavedTeams();$('teamsList').innerHTML=list.length?list.map((t,i)=>'<article class="teamCard"><div class="teamAvatar">'+esc((t.name||'?').trim().slice(0,2).toUpperCase())+'</div><div class="teamInfo"><div class="teamName">'+esc(t.name)+'</div><div class="teamMeta">Players: '+(t.players||[]).length+'</div>'+(t.players?.length?'<div class="teamPlayers">'+t.players.map(esc).join(', ')+'</div>':'')+'</div><div class="teamActions"><button type="button" data-edit-team="'+i+'" aria-label="Edit team">✎</button><button type="button" data-delete-team="'+i+'" aria-label="Delete team">▣</button></div></article>').join(''):'<div class="panel">No teams yet. Tap + to add a team and optionally save its players.</div>';document.querySelectorAll('[data-edit-team]').forEach(b=>b.onclick=()=>editTeam(Number(b.dataset.editTeam)));document.querySelectorAll('[data-delete-team]').forEach(b=>b.onclick=()=>{const all=getSavedTeams(),t=all[Number(b.dataset.deleteTeam)];if(confirm('Delete team '+t.name+'?')){all.splice(Number(b.dataset.deleteTeam),1);storeSavedTeams(all);say('Team deleted.')}})}function editTeam(i=-1){const all=getSavedTeams(),t=i>=0?all[i]:null;editingTeamOriginal=t?.name||'';$('teamEditorTitle').textContent=t?'Edit team':'Add team';$('teamNameInput').value=t?.name||'';$('teamPlayersInput').value=(t?.players||[]).join(', ');$('teamEditor').classList.remove('hidden');$('teamNameInput').focus()}function getMatchPlayerRoster(){return selectedMatch&&Array.isArray(selectedMatch.playerRoster)?selectedMatch.playerRoster:[]}function getSavedPlayerNames(){try{const v=JSON.parse(localStorage.getItem('scorexPlayerNames')||'[]');return Array.isArray(v)?v:[]}catch{return []}}function rememberPlayerNames(...groups){const names=mergePlayerRoster(getSavedPlayerNames(),...groups);localStorage.setItem('scorexPlayerNames',JSON.stringify(names));return names}function mergePlayerRoster(...groups){const map=new Map();groups.flat().filter(Boolean).forEach(v=>{const name=String(v).trim();if(name&&!map.has(name.toLowerCase()))map.set(name.toLowerCase(),name)});return [...map.values()].sort((a,b)=>a.localeCompare(b))}function refreshPlayerSuggestions(){const teams=getSavedTeams(),names=rememberPlayerNames(teams.flatMap(t=>t.players||[]),getMatchPlayerRoster()),opts=names.map(n=>'<option value="'+esc(n)+'"></option>').join('');$('playerSuggestions').innerHTML=opts;$('openingPlayerSuggestions').innerHTML=opts;$('teamSuggestions').innerHTML=[...new Set(teams.map(t=>t.name))].map(n=>'<option value="'+esc(n)+'"></option>').join('')}$('addTeamFab').onclick=()=>editTeam();$('cancelTeamBtn').onclick=()=>$('teamEditor').classList.add('hidden');$('saveTeamBtn').onclick=()=>{const name=$('teamNameInput').value.trim(),players=[...new Set($('teamPlayersInput').value.split(',').map(x=>x.trim()).filter(Boolean))];if(!name){say('Enter a team name.');return}const all=getSavedTeams(),dupe=all.find(t=>t.name.toLowerCase()===name.toLowerCase()&&t.name!==editingTeamOriginal);if(dupe){say('A team with this name already exists.');return}const item={name,players};if(editingTeamOriginal){const i=all.findIndex(t=>t.name===editingTeamOriginal);if(i>=0)all[i]=item;else all.push(item)}else all.push(item);storeSavedTeams(all);$('teamEditor').classList.add('hidden');say('Team and player list saved on this device. Player names are now available as suggestions.')} ;renderTeams();refreshPlayerSuggestions();const showTab=id=>{['newMatchTab','teamsTab','historyTab'].forEach(x=>$(x).classList.toggle('hidden',x!==id));$('settingsTab').classList.add('hidden');$('bottomNav').classList.remove('hidden');$('addTeamFab').classList.toggle('hidden',id!=='teamsTab');document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));};document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));$('addTeamFab').classList.add('hidden');$('settingsBtn').onclick=()=>{$('newMatchTab').classList.add('hidden');$('teamsTab').classList.add('hidden');$('historyTab').classList.add('hidden');$('settingsTab').classList.remove('hidden');$('bottomNav').classList.add('hidden');$('addTeamFab').classList.add('hidden')};$('openAdvanced').onclick=()=>$('settingsBtn').click();$('backFromSettings').onclick=()=>showTab('newMatchTab');$('alertsBtn').onclick=()=>say('No new notifications.');const settingsDefaults={players:11,noBall:true,noBallReball:true,noBallRuns:1,wide:true,wideReball:true,wideRuns:1};try{const saved=JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}');$('playersPerTeam').value=saved.players??settingsDefaults.players;$('noBallEnabled').checked=saved.noBall??true;$('noBallReball').checked=saved.noBallReball??true;$('noBallRuns').value=saved.noBallRuns??1;$('wideEnabled').checked=saved.wide??true;$('wideReball').checked=saved.wideReball??true;$('wideRuns').value=saved.wideRuns??1}catch{}$('saveSettings').onclick=()=>{const value={players:Number($('playersPerTeam').value),noBall:$('noBallEnabled').checked,noBallReball:$('noBallReball').checked,noBallRuns:Number($('noBallRuns').value),wide:$('wideEnabled').checked,wideReball:$('wideReball').checked,wideRuns:Number($('wideRuns').value)};if(!Number.isInteger(value.players)||value.players<1||value.players>15||value.noBallRuns<0||value.wideRuns<0){say('Enter valid match settings.');return}localStorage.setItem('scorexMatchSettings',JSON.stringify(value));say('Match settings saved on this device.');showTab('newMatchTab')};$('teamA').addEventListener('input',()=>{document.querySelector('label input[name="tossWinner"][value="host"]')?.parentElement.replaceChildren(document.querySelector('input[name="tossWinner"][value="host"]'),document.createTextNode(' '+($('teamA').value.trim()||'Host Team')));document.querySelector('label input[name="tossWinner"][value="visitor"]')?.parentElement.replaceChildren(document.querySelector('input[name="tossWinner"][value="visitor"]'),document.createTextNode(' '+($('teamB').value.trim()||'Visitor Team')))});$('teamB').addEventListener('input',()=>{document.querySelector('label input[name="tossWinner"][value="visitor"]')?.parentElement.replaceChildren(document.querySelector('input[name="tossWinner"][value="visitor"]'),document.createTextNode(' '+($('teamB').value.trim()||'Visitor Team')))});const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function loadWork(user,name){
+async function loadWork(user,name,codeId=''){
  if(initializing)return;initializing=true;
- currentUser=user;currentName=name||'Scorer';
+ currentUser=user;currentName=name||'Scorer';currentCodeId=codeId||'';
  $('login').classList.add('hidden');$('work').classList.remove('hidden');$('bottomNav').classList.remove('hidden');showTab('newMatchTab');
  if(stopList){stopList();stopList=null}
  try{
-   const q=query(collection(db,'matches'),where('createdBy','==',user.uid));
-   stopList=onSnapshot(q,s=>{
-     const ms=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>((b.updatedAt?.toMillis?.()||0)-(a.updatedAt?.toMillis?.()||0)));
-     $('matchList').innerHTML=ms.length?ms.map(m=>'<div style="padding:12px 0;border-bottom:1px solid #29473d"><b>'+esc(m.teamA)+' vs '+esc(m.teamB)+'</b><div class="small">'+esc(m.tournament||'Match')+' · '+esc(m.status)+'</div><button style="margin-top:8px" data-open="'+m.id+'">Open scoring</button></div>').join(''):'No matches created yet.';
-     document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>selectMatch(ms.find(m=>m.id===b.dataset.open)));renderTeams();refreshPlayerSuggestions();
-   },e=>say('Match list error: '+e.message));
-   say('Signed in as '+currentName+'.');
+   // Older matches belong to the scorer code/name, not necessarily this browser's anonymous UID.
+   let uidMatches=[],nameMatches=[];
+   const renderMatches=()=>{
+     const combined=new Map();
+     [...uidMatches,...nameMatches].forEach(m=>combined.set(m.id,m));
+     const ms=[...combined.values()].sort((a,b)=>((b.updatedAt?.toMillis?.()||0)-(a.updatedAt?.toMillis?.()||0)));
+     matchHistory=ms;
+     $('matchList').innerHTML=ms.length?ms.map(m=>'<div style="padding:12px 0;border-bottom:1px solid #29473d"><b>'+esc(m.teamA)+' vs '+esc(m.teamB)+'</b><div class="small">'+esc(m.tournament||'Match')+' · '+esc(m.status)+'</div><button style="margin-top:8px" data-open="'+m.id+'">Open scoring</button></div>').join(''):'No matches found for '+esc(currentName)+'.';
+     document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>selectMatch(matchHistory.find(m=>m.id===b.dataset.open)));
+     renderTeams();refreshPlayerSuggestions();
+     // Attach the code ID to old records on first access. This permanently links
+     // legacy records to the verified scorer code while preserving their original creator UID.
+     if(currentCodeId&&currentUser){
+       nameMatches.forEach(m=>{
+         if(!m.createdByCodeId&&!m._claimPending){
+           m._claimPending=true;
+           updateDoc(doc(db,'matches',m.id),{createdByCodeId:currentCodeId,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()})
+             .catch(e=>console.warn('Legacy match ownership link will retry after Firestore Rules are published:',m.id,e))
+             .finally(()=>{const item=matchHistory.find(x=>x.id===m.id);if(item)delete item._claimPending;});
+         }
+       });
+     }
+   };
+   const stopUid=onSnapshot(query(collection(db,'matches'),where('createdBy','==',user.uid)),snap=>{
+     uidMatches=snap.docs.map(d=>({id:d.id,...d.data()}));renderMatches();
+   },e=>say('Your match list could not load: '+e.message));
+   const stopName=onSnapshot(query(collection(db,'matches'),where('createdByEmail','==',currentName)),snap=>{
+     nameMatches=snap.docs.map(d=>({id:d.id,...d.data()}));renderMatches();
+   },e=>say('Match history lookup failed: '+e.message));
+   stopList=()=>{stopUid();stopName();};
+   say('Signed in as '+currentName+'. Loading matches linked to this scorer code…');
  }catch(e){say('Could not load scorer desk: '+e.message)}
  finally{initializing=false}
 }
+
 $('loginBtn').onclick=async()=>{
  if(loginPending)return;
  const displayName=$('scorerName').value.trim();
@@ -148,7 +178,7 @@ $('loginBtn').onclick=async()=>{
        const existingCode=await getDoc(doc(db,'scorerCodes',code));
        if(existingCode.exists()&&existingCode.data().enabled===true){
          currentName=oldSession.data().displayName;
-         await loadWork(auth.currentUser,currentName);
+         await loadWork(auth.currentUser,currentName,code);
          return;
        }
      }
@@ -163,11 +193,11 @@ $('loginBtn').onclick=async()=>{
    stage='creating scorer session';
    await setDoc(doc(db,'scorerSessions',cred.user.uid),{displayName:data.displayName,codeId:code,active:true,createdAt:serverTimestamp()});
    currentName=data.displayName;
-   await loadWork(cred.user,data.displayName);
+   await loadWork(cred.user,data.displayName,code);
  }catch(e){say('Scorer login failed during '+stage+': '+e.message+' Check that the latest Firestore Rules were actually published.');}
  finally{loginPending=false;$('loginBtn').disabled=false;}
 };
-$('logoutBtn').onclick=async()=>{try{if(stopList){stopList();stopList=null}stopSelectedMatchSync();await signOut(auth);currentUser=null;currentName='';$('work').classList.add('hidden');$('login').classList.remove('hidden');$('bottomNav').classList.add('hidden');say('Signed out. Enter your name and code to continue.')}catch(e){say('Sign-out failed: '+e.message)}};
+$('logoutBtn').onclick=async()=>{try{if(stopList){stopList();stopList=null}stopSelectedMatchSync();await signOut(auth);currentUser=null;currentCodeId='';currentName='';$('work').classList.add('hidden');$('login').classList.remove('hidden');$('bottomNav').classList.add('hidden');say('Signed out. Enter your name and code to continue.')}catch(e){say('Sign-out failed: '+e.message)}};
 let authStateResolved=false;
 onAuthStateChanged(auth,async user=>{
  authStateResolved=true;
@@ -193,7 +223,7 @@ onAuthStateChanged(auth,async user=>{
      return;
    }
    currentName=session.data().displayName||codeSnap.data().displayName||'Scorer';
-   await loadWork(user,currentName);
+   await loadWork(user,currentName,session.data().codeId);
  }catch(e){
    $('login').classList.remove('hidden');$('work').classList.add('hidden');$('bottomNav').classList.add('hidden');
    say('Could not restore saved session: '+e.message+' You can retry with your scorer name and code.');
@@ -204,7 +234,7 @@ function showOpeningPage(){if(!pendingMatch)return;$('newMatchTab').classList.ad
 function returnToMatchSetup(){$('openingPage').classList.add('hidden');$('openingPage').style.display='none';$('scorePanel').classList.add('hidden');$('work').classList.remove('hidden');$('bottomNav').classList.remove('hidden');showTab('newMatchTab')}
 $('backOpening').onclick=returnToMatchSetup;
 $('createBtn').onclick=()=>{if(!currentUser)return;const teamA=$('teamA').value.trim()||'Host Team',teamB=$('teamB').value.trim()||'Visitor Team',maxOvers=Number($('maxOvers').value);if(teamA.toLowerCase()===teamB.toLowerCase()||!Number.isInteger(maxOvers)||maxOvers<1||maxOvers>100){say('Use different team names and valid overs.');return;}const tossWinner=document.querySelector('input[name="tossWinner"]:checked')?.value||'host';const optedTo=document.querySelector('input[name="optedTo"]:checked')?.value||'bat';const battingFirst=(tossWinner==='host'?(optedTo==='bat'?'teamA':'teamB'):(optedTo==='bat'?'teamB':'teamA'));pendingMatch={tournament:$('tournament').value.trim(),teamA,teamB,maxOvers,battingFirst,battingTeam:battingFirst==='teamA'?teamA:teamB,bowlingTeam:battingFirst==='teamA'?teamB:teamA,tossWinner:tossWinner==='host'?teamA:teamB,optedTo};showOpeningPage();say('Enter the opening two batsmen and bowler to continue.');};
-$('startMatchBtn').onclick=async()=>{if(!currentUser||!pendingMatch)return;const strikerName=$('openingStriker').value.trim(),nonStrikerName=$('openingNonStriker').value.trim(),bowlerName=$('openingBowler').value.trim();if(!strikerName||!nonStrikerName||!bowlerName){say('Enter striker, non-striker and opening bowler before starting.');return;}if(strikerName.toLowerCase()===nonStrikerName.toLowerCase()){say('Striker and non-striker must be different players.');return;}const b=$('startMatchBtn');b.disabled=true;try{const ref=await addDoc(collection(db,'matches'),{...pendingMatch,overs:pendingMatch.maxOvers,score:0,wickets:0,balls:0,innings:1,teamAScore:null,teamBScore:null,playersPerTeam:(()=>{try{return Number(JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}').players)||11}catch{return 11}})(),strikerName,nonStrikerName,bowlerName,playerRoster:mergePlayerRoster(pendingMatch.teamAPlayers||[],pendingMatch.teamBPlayers||[],strikerName,nonStrikerName,bowlerName),battingStats:{[strikerName]:{runs:0,balls:0,fours:0,sixes:0},[nonStrikerName]:{runs:0,balls:0,fours:0,sixes:0}},bowlerStats:{[bowlerName]:{runs:0,balls:0,wickets:0}},recentBalls:[],ballHistory:[],target:null,status:'live',statusText:'Players ready',createdBy:currentUser.uid,createdByEmail:currentName,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});const snap=await getDoc(ref);pendingMatch=null;$('openingPage').classList.add('hidden');$('openingPage').style.display='none';$('bottomNav').classList.add('hidden');selectMatch({id:ref.id,...snap.data()});say('Match started. Scores update live.');window.scrollTo(0,0);}catch(e){say('Could not start match: '+e.message)}finally{b.disabled=false}};
+$('startMatchBtn').onclick=async()=>{if(!currentUser||!pendingMatch)return;const strikerName=$('openingStriker').value.trim(),nonStrikerName=$('openingNonStriker').value.trim(),bowlerName=$('openingBowler').value.trim();if(!strikerName||!nonStrikerName||!bowlerName){say('Enter striker, non-striker and opening bowler before starting.');return;}if(strikerName.toLowerCase()===nonStrikerName.toLowerCase()){say('Striker and non-striker must be different players.');return;}const b=$('startMatchBtn');b.disabled=true;try{const ref=await addDoc(collection(db,'matches'),{...pendingMatch,overs:pendingMatch.maxOvers,score:0,wickets:0,balls:0,innings:1,teamAScore:null,teamBScore:null,playersPerTeam:(()=>{try{return Number(JSON.parse(localStorage.getItem('scorexMatchSettings')||'{}').players)||11}catch{return 11}})(),strikerName,nonStrikerName,bowlerName,playerRoster:mergePlayerRoster(pendingMatch.teamAPlayers||[],pendingMatch.teamBPlayers||[],strikerName,nonStrikerName,bowlerName),battingStats:{[strikerName]:{runs:0,balls:0,fours:0,sixes:0},[nonStrikerName]:{runs:0,balls:0,fours:0,sixes:0}},bowlerStats:{[bowlerName]:{runs:0,balls:0,wickets:0}},recentBalls:[],ballHistory:[],target:null,status:'live',statusText:'Players ready',createdBy:currentUser.uid,createdByEmail:currentName,createdByCodeId:currentCodeId,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp()});const snap=await getDoc(ref);pendingMatch=null;$('openingPage').classList.add('hidden');$('openingPage').style.display='none';$('bottomNav').classList.add('hidden');selectMatch({id:ref.id,...snap.data()});say('Match started. Scores update live.');window.scrollTo(0,0);}catch(e){say('Could not start match: '+e.message)}finally{b.disabled=false}};
 $('savePlayersBtn').onclick=async()=>{
  if(!selectedId||!currentUser||!selectedMatch)return;
  const strikerName=$('strikerName').value.trim(),nonStrikerName=$('nonStrikerName').value.trim(),bowlerName=$('bowlerName').value.trim();
