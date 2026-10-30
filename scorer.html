@@ -264,6 +264,23 @@ async function choosePlayerName(title,current,roster){
   select.focus();
  });
 }
+async function chooseWicketDetails(striker,nonStriker,roster){
+ const old=document.getElementById('scorexWicketPicker');if(old)old.remove();
+ const names=mergePlayerRoster(roster||[],getMatchPlayerRoster());
+ const options=names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
+ const wrap=document.createElement('div');wrap.id='scorexWicketPicker';wrap.style.cssText='position:fixed;inset:0;z-index:100000;background:#000a;display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto';
+ wrap.innerHTML='<div style="background:#fff;color:#17251b;border-radius:16px;padding:18px;width:min(100%,440px);max-height:92vh;overflow:auto;box-shadow:0 12px 40px #0005"><h3 style="margin:0 0 5px;color:#b42318">Wicket! How did the batter get out?</h3><p style="margin:0 0 14px;color:#667;font-size:13px">Choose dismissal details and the incoming batter. The delivery will be saved after confirmation.</p><label>Dismissal type</label><select id="wxType" style="width:100%;padding:12px;border:1px solid #aaa;border-radius:9px;font:inherit;margin:5px 0 12px"><option value="caught">Caught</option><option value="bowled">Bowled</option><option value="lbw">LBW</option><option value="stumped">Stumped</option><option value="run out">Run out</option><option value="hit wicket">Hit wicket</option></select><label>Who got out?</label><select id="wxOut" style="width:100%;padding:12px;border:1px solid #aaa;border-radius:9px;font:inherit;margin:5px 0 12px"><option value="striker">'+esc(striker)+'</option><option value="nonStriker">'+esc(nonStriker)+'</option></select><div id="wxFielderWrap"><label id="wxFielderLabel">Catch taken by</label><input id="wxFielder" maxlength="80" list="wxFielderList" placeholder="Fielder name" style="width:100%;padding:12px;border:1px solid #aaa;border-radius:9px;font:inherit;margin:5px 0 12px"><datalist id="wxFielderList">'+names.map(n=>'<option value="'+esc(n)+'"></option>').join('')+'</datalist></div><label>Incoming batter</label><input id="wxIncoming" maxlength="80" autocomplete="off" placeholder="New batter name" style="width:100%;padding:12px;border:1px solid #aaa;border-radius:9px;font:inherit;margin:5px 0 8px"><p id="wxError" style="color:#b42318;font-size:12px;min-height:18px;margin:0 0 10px" aria-live="polite"></p><div style="display:flex;gap:9px"><button type="button" id="wxCancel" style="flex:1;background:#e8eee9;color:#263b2a">Cancel</button><button type="button" id="wxConfirm" style="flex:1">Confirm wicket</button></div></div>';
+ document.body.appendChild(wrap);
+ const type=wrap.querySelector('#wxType'),fielderWrap=wrap.querySelector('#wxFielderWrap'),fielderLabel=wrap.querySelector('#wxFielderLabel'),fielder=wrap.querySelector('#wxFielder'),incoming=wrap.querySelector('#wxIncoming'),error=wrap.querySelector('#wxError');
+ const refresh=()=>{const t=type.value;fielderWrap.style.display=['caught','stumped','run out'].includes(t)?'block':'none';fielderLabel.textContent=t==='caught'?'Catch taken by':t==='stumped'?'Stumping by':'Run-out throw / fielder by';};
+ type.addEventListener('change',refresh);refresh();
+ return await new Promise(resolve=>{
+  const finish=value=>{wrap.remove();resolve(value);};
+  wrap.querySelector('#wxCancel').onclick=()=>finish(null);
+  wrap.querySelector('#wxConfirm').onclick=()=>{const t=type.value,f=fielder.value.trim(),n=incoming.value.trim(),out=wrap.querySelector('#wxOut').value,staying=out==='striker'?nonStriker:striker;if(!n){error.textContent='Enter the incoming batter name.';return;}if(n.toLowerCase()===String(staying||'').trim().toLowerCase()||n.toLowerCase()===String(out==='striker'?striker:nonStriker).trim().toLowerCase()){error.textContent='Incoming batter must be a new, different player.';return;}if(['caught','stumped','run out'].includes(t)&&!f){error.textContent='Enter the fielder / catcher name.';return;}finish({type:t,out,fielder:f,incoming:n});};
+  incoming.focus();
+ });
+}
 async function ball(run,kind='normal'){
  if(!selectedId||!currentUser||scoringPending){say('Scoring is not ready yet.');return;}
  if(!selectedMatch||selectedMatch.status!=='live'){say('This match is not live.');return;}
@@ -282,6 +299,8 @@ async function ball(run,kind='normal'){
  say('Saving score…');
  try{
   const m={...selectedMatch};
+  const wicketDetails=wicket?await chooseWicketDetails(String(m.strikerName||''),String(m.nonStrikerName||''),getMatchPlayerRoster()):null;
+  if(wicket&&!wicketDetails){say('Wicket cancelled. No delivery was recorded.');return;}
   const legal=extraType!=='wide'&&extraType!=='noball';
   const beforeScore=Number(m.score||0),beforeWickets=Number(m.wickets||0),beforeBalls=Number(m.balls||0),innings=Number(m.innings||1);
   const batter=String(m.strikerName||'').trim(),otherBatter=String(m.nonStrikerName||'').trim(),bowler=String(m.bowlerName||'').trim();
@@ -297,15 +316,16 @@ async function ball(run,kind='normal'){
   const bw={...(bowlerStats[bowler]||{runs:0,balls:0,wickets:0,maidens:0})};
   if(!bye&&!legbye)bw.runs=(bw.runs||0)+extraPenalty+((extraType==='normal'||noBall)?runs:0);
   if(legal)bw.balls=(bw.balls||0)+1;
-  if(wicket&&extraType==='normal')bw.wickets=(bw.wickets||0)+1; // Run-outs on wides/no-balls/byes/leg-byes are not credited to the bowler.
+  if(wicket&&extraType==='normal'&&wicketDetails.type!=='run out')bw.wickets=(bw.wickets||0)+1;
   bowlerStats[bowler]=bw;
   let strikerName=batter,nonStrikerName=otherBatter;
   const rotateRuns=(wide||noBall)?runs+extraPenalty:runs;
   if(rotateRuns%2===1){strikerName=otherBatter;nonStrikerName=batter;}
   if(legal&&balls>0&&balls%6===0){const swap=strikerName;strikerName=nonStrikerName;nonStrikerName=swap;}
+  if(wicketDetails){const dismissed=wicketDetails.out==='striker'?batter:otherBatter;if(strikerName===dismissed)strikerName=wicketDetails.incoming;else if(nonStrikerName===dismissed)nonStrikerName=wicketDetails.incoming;battingStats[wicketDetails.incoming]={...(battingStats[wicketDetails.incoming]||{runs:0,balls:0,fours:0,sixes:0})};}
   const kindLabel=wide?'Wide':noBall?'No ball':bye?'Bye':legbye?'Leg bye':'Run';
-  const label=(bye?(runs+'B'):legbye?(runs+'lb'):wide?('Wd'+(runs?'+'+runs:'')):noBall?('Nb'+(runs?'+'+runs:'')):String(runs))+(wicket?'+W':'');
-  const event={innings,over:Math.floor(beforeBalls/6),ball:(beforeBalls%6)+1,kind:extraType,wicket,run:runs,runsAdded:totalAdded,label,striker:batter,bowler,score,wickets,at:new Date().toISOString()};
+  const label=(bye?(runs+'B'):legbye?(runs+'lb'):wide?('Wd'+(runs?'+'+runs:'')):noBall?('Nb'+(runs?'+'+runs:'')):String(runs))+(wicket?' · '+(wicketDetails.type==='run out'?'Run out':wicketDetails.type==='lbw'?'LBW':wicketDetails.type==='hit wicket'?'Hit wicket':wicketDetails.type.charAt(0).toUpperCase()+wicketDetails.type.slice(1)):'');
+  const event={innings,over:Math.floor(beforeBalls/6),ball:(beforeBalls%6)+1,kind:extraType,wicket,wicketDetails:wicketDetails?{type:wicketDetails.type,dismissed:wicketDetails.out==='striker'?batter:otherBatter,fielder:wicketDetails.fielder||'',incoming:wicketDetails.incoming}:null,run:runs,runsAdded:totalAdded,label,striker:batter,bowler,score,wickets,at:new Date().toISOString()};
   const ballHistory=[...(m.ballHistory||[]),event].slice(-600),recentBalls=ballHistory.filter(x=>Number(x.innings||1)===innings).slice(-6);
   const maxBalls=Number(m.maxOvers||m.overs||20)*6;
   const inningsEnded=wickets>=Math.max(1,Number(m.playersPerTeam||11)-1)||balls>=maxBalls;
@@ -316,7 +336,7 @@ async function ball(run,kind='normal'){
   if(innings===2&&m.target)statusText=(completed?statusText+' · Target '+m.target:'Target '+m.target+' · '+statusText);
   const teamAScore=m.teamA===m.battingTeam?score:(m.teamAScore??null),teamBScore=m.teamB===m.battingTeam?score:(m.teamBScore??null);
   const previous={score:m.score??0,wickets:m.wickets??0,balls:m.balls??0,innings:m.innings??1,status:m.status,statusText:m.statusText||'',teamAScore:m.teamAScore??null,teamBScore:m.teamBScore??null,battingStats:m.battingStats||{},bowlerStats:m.bowlerStats||{},recentBalls:m.recentBalls||[],ballHistory:m.ballHistory||[],strikerName:m.strikerName||'',nonStrikerName:m.nonStrikerName||'',bowlerName:m.bowlerName||'',target:m.target??null};
-  let patch={score,wickets,balls,[m.teamA===m.battingTeam?'teamAScore':'teamBScore']:score,teamAScore,teamBScore,status,statusText,strikerName,nonStrikerName,bowlerName:bowler,playerRoster:mergePlayerRoster(getMatchPlayerRoster(),batter,otherBatter,bowler),battingStats,bowlerStats,recentBalls,ballHistory,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind:extraType,wicket,run:runs,runsAdded:totalAdded,by:currentUser.uid,email:currentName,at:new Date().toISOString(),striker:batter,nonStriker:otherBatter,bowler},previous};
+  let patch={score,wickets,balls,[m.teamA===m.battingTeam?'teamAScore':'teamBScore']:score,teamAScore,teamBScore,status,statusText,strikerName,nonStrikerName,bowlerName:bowler,playerRoster:mergePlayerRoster(getMatchPlayerRoster(),batter,otherBatter,bowler,wicketDetails?wicketDetails.incoming:''),battingStats,bowlerStats,recentBalls,ballHistory,updatedBy:currentUser.uid,updatedByEmail:currentName,updatedAt:serverTimestamp(),lastAction:{kind:extraType,wicket,wicketDetails:wicketDetails?{type:wicketDetails.type,dismissed:wicketDetails.out==='striker'?batter:otherBatter,fielder:wicketDetails.fielder||'',incoming:wicketDetails.incoming}:null,run:runs,runsAdded:totalAdded,by:currentUser.uid,email:currentName,at:new Date().toISOString(),striker:batter,nonStriker:otherBatter,bowler},previous};
   const overCompleted=legal&&balls>0&&balls%6===0&&!inningsEnded&&!completed;
   let nextBowlerName='';
   if(overCompleted){nextBowlerName=await choosePlayerName('Over complete — select next bowler',bowler,mergePlayerRoster(Object.keys(bowlerStats),getMatchPlayerRoster()));bowlerStats[nextBowlerName]={...(bowlerStats[nextBowlerName]||{runs:0,balls:0,wickets:0,maidens:0})};patch={...patch,bowlerName:nextBowlerName,bowlerStats,playerRoster:mergePlayerRoster(getMatchPlayerRoster(),nextBowlerName),lastAction:{kind:'over-complete',previousBowler:bowler,nextBowler:nextBowlerName,by:currentUser.uid,email:currentName,at:new Date().toISOString()}};}
