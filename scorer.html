@@ -117,7 +117,7 @@ window.addEventListener('unhandledrejection',function(e){var m=document.getEleme
 </script></main><nav id="bottomNav" class="bottomNav hidden"><button data-tab="newMatchTab" class="active"><span>🏏</span>New Match</button><button data-tab="teamsTab"><span>👥</span>Teams</button><button data-tab="historyTab"><span>◷</span>History</button></nav><script type="module">
 import {auth,db} from './firebase.js';
 import {signInAnonymously,onAuthStateChanged,signOut,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
-import {collection,addDoc,doc,setDoc,updateDoc,onSnapshot,query,where,orderBy,serverTimestamp,getDoc} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import {collection,addDoc,doc,setDoc,updateDoc,onSnapshot,query,where,orderBy,serverTimestamp,getDoc,deleteDoc} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 const $=id=>document.getElementById(id);let currentUser=null,currentCodeId='',selectedId=null,selectedMatch=null,stopList=null,stopSelectedMatch=null,matchHistory=[],currentName='',loginPending=false,initializing=false,scoringPending=false,activeScoreTab='score';const authReady=setPersistence(auth,browserLocalPersistence).catch(e=>console.warn('Could not set local auth persistence:',e));
 const say=t=>{const msg=String(t??'');const main=$('message');if(main)main.textContent=msg;const live=$('scoreStatus');if(live&&!$('scorePanel').classList.contains('hidden')){live.textContent=msg;live.classList.toggle('error',/failed|error|denied|could not|invalid|not live/i.test(msg));live.classList.toggle('success',/saved|connected|started|updated|syncing|live/i.test(msg)&&!/failed|error|denied|could not/i.test(msg));}};let editingTeamOriginal='';
 async function updateSelectedMatch(patch){
@@ -143,8 +143,15 @@ async function loadWork(user,name,codeId=''){
      [...uidMatches,...nameMatches].forEach(m=>combined.set(m.id,m));
      const ms=[...combined.values()].sort((a,b)=>((b.updatedAt?.toMillis?.()||0)-(a.updatedAt?.toMillis?.()||0)));
      matchHistory=ms;
-     $('matchList').innerHTML=ms.length?ms.map(m=>'<div style="padding:12px 0;border-bottom:1px solid #29473d"><b>'+esc(m.teamA)+' vs '+esc(m.teamB)+'</b><div class="small">'+esc(m.tournament||'Match')+' · '+esc(m.status)+'</div><button style="margin-top:8px" data-open="'+m.id+'">Open scoring</button></div>').join(''):'No matches found for '+esc(currentName)+'.';
+     $('matchList').innerHTML=ms.length?ms.map(m=>'<div style="padding:12px 0;border-bottom:1px solid #29473d"><b>'+esc(m.teamA)+' vs '+esc(m.teamB)+'</b><div class="small">'+esc(m.tournament||'Match')+' · '+esc(m.status)+'</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button data-open="'+esc(m.id)+'">Open scoring</button><button type="button" data-delete-match="'+esc(m.id)+'" style="background:#8b2929;color:#fff">Delete</button></div></div>').join(''):'No matches found for '+esc(currentName)+'.';
      document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>selectMatch(matchHistory.find(m=>m.id===b.dataset.open)));
+     document.querySelectorAll('[data-delete-match]').forEach(b=>b.onclick=async()=>{
+       const id=b.dataset.deleteMatch,match=matchHistory.find(m=>m.id===id);if(!match)return;
+       if(!confirm('Permanently delete '+(match.teamA||'Team A')+' vs '+(match.teamB||'Team B')+' from match history? This cannot be undone.'))return;
+       b.disabled=true;b.textContent='Deleting…';
+       try{await deleteDoc(doc(db,'matches',id));if(selectedId===id){stopSelectedMatchSync();selectedId=null;selectedMatch=null;$('scorePanel').classList.add('hidden');showTab('historyTab');}say('Match deleted from history.');}
+       catch(e){console.error('Delete match failed',e);say('Could not delete match ('+(e.code||'error')+'): '+e.message);b.disabled=false;b.textContent='Delete';}
+     });
      renderTeams();refreshPlayerSuggestions();
      // Attach the code ID to old records on first access. This permanently links
      // legacy records to the verified scorer code while preserving their original creator UID.
