@@ -9,7 +9,7 @@
     <option value="both" selected>Hindi + English</option><option value="hi">Hindi</option><option value="en">English</option>
   </select>
 </div>
-<p class="refresh" id="commentaryStatus">Turn on Auto Commentary to hear live ball-by-ball updates. Voice is generated on this device.</p><div id="matches"><div class="empty">Connecting to live scores…</div></div><p class="refresh" id="connection">Connecting to Firebase…</p></main><script type="module">
+<p class="refresh" id="commentaryStatus">Turn on Auto Commentary to hear live ball-by-ball updates. Voice uses the best Hindi/English voice available on this device.</p><div id="matches"><div class="empty">Connecting to live scores…</div></div><p class="refresh" id="connection">Connecting to Firebase…</p></main><script type="module">
 import { db } from './firebase.js';
 import { collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 const root=document.querySelector('#matches'),connection=document.querySelector('#connection');
@@ -71,16 +71,28 @@ function commentaryLines(m,e){
  if(m.status==='completed'){overHi+=' मैच समाप्त। '+String(m.statusText||'');overEn+=' Match complete. '+String(m.statusText||'');}
  return [hi+scoreHi+overHi,en+scoreEn+overEn];
 }
+function chooseCommentaryVoice(lang){
+ const voices=window.speechSynthesis.getVoices()||[];
+ const isHindi=lang==='hi';
+ const exact=voices.filter(v=>isHindi?/^hi([-_]|$)/i.test(v.lang):/^en-IN$/i.test(v.lang));
+ const regional=voices.filter(v=>isHindi?/hindi|hi-IN/i.test(v.name+' '+v.lang):/^en([-_]|$)/i.test(v.lang));
+ const pool=exact.length?exact:regional;
+ // Prefer installed high-quality/local voices (commonly Google or Microsoft on Android/Chrome).
+ return pool.find(v=>/google|microsoft|natural|neural/i.test(v.name))
+  ||pool.find(v=>v.localService)
+  ||pool[0]
+  ||null;
+}
 function playCommentaryLine(line,lang){
  if(!commentaryEnabled||!ttsAvailable)return;
- const utterance=new SpeechSynthesisUtterance(line);
+ const utterance=new SpeechSynthesisUtterance(String(line).replace(/\\s+/g,' ').trim());
  utterance.lang=lang==='hi'?'hi-IN':'en-IN';
- utterance.rate=1;utterance.pitch=1;utterance.volume=1;
- const voices=window.speechSynthesis.getVoices()||[];
- const voice=lang==='hi'
-  ?voices.find(v=>/^hi([-_]|$)/i.test(v.lang))||voices.find(v=>/hindi/i.test(v.name))
-  :voices.find(v=>/^en-IN$/i.test(v.lang))||voices.find(v=>/^en([-_]|$)/i.test(v.lang));
- if(voice)utterance.voice=voice;
+ // A slightly slower pace and softer pitch sound less like a robotic announcement.
+ utterance.rate=lang==='hi'?0.93:0.96;
+ utterance.pitch=0.94;
+ utterance.volume=1;
+ const voice=chooseCommentaryVoice(lang);
+ if(voice){utterance.voice=voice;utterance.lang=voice.lang||utterance.lang;}
  utterance.onend=()=>{commentaryQueue.shift();commentarySpeaking=false;runCommentaryQueue();};
  utterance.onerror=()=>{commentaryQueue.shift();commentarySpeaking=false;runCommentaryQueue();};
  commentarySpeaking=true;
