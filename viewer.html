@@ -13,7 +13,7 @@
 import { db } from './firebase.js';
 import { collection, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 const root=document.querySelector('#matches'),connection=document.querySelector('#connection');
-const sixAudio=new Audio('./assets/sounds/six-1.mp3');sixAudio.preload='auto';let soundEnabled=false;const previousBallCounts=new Map();let firstSnapshot=true;
+const sixAudio=new Audio('./assets/sounds/six-1.mp3');sixAudio.preload='auto';let soundEnabled=false;let firstSnapshot=true;
 const soundToggle=document.querySelector('#soundToggle'),soundStatus=document.querySelector('#soundStatus');
 const commentaryToggle=document.querySelector('#commentaryToggle'),commentaryStatus=document.querySelector('#commentaryStatus'),commentaryLanguage=document.querySelector('#commentaryLanguage');
 let commentaryEnabled=false,commentaryQueue=[],commentarySpeaking=false;
@@ -65,7 +65,11 @@ function commentaryLines(m,e){
   en=runs+' run'+(runs===1?'':'s')+' to the total. ';
   hi='कुल स्कोर में '+runs+' रन जुड़े। ';
  }
- return [hi+scoreHi,en+scoreEn];
+ let overHi='',overEn='';
+ if(Number(e.ball)===6){overHi=' ओवर समाप्त। '+(over-1)+'.'+ball+' ओवर के बाद कुल स्कोर '+score+' रन और '+wickets+' विकेट।';overEn=' End of the over. The score is '+score+' for '+wickets+' after '+(over-1)+'.'+ball+' overs.';}
+ if(m.status==='innings_break'){overHi+=' पारी समाप्त।';overEn+=' The innings has ended.';}
+ if(m.status==='completed'){overHi+=' मैच समाप्त। '+String(m.statusText||'');overEn+=' Match complete. '+String(m.statusText||'');}
+ return [hi+scoreHi+overHi,en+scoreEn+overEn];
 }
 function playCommentaryLine(line,lang){
  if(!commentaryEnabled||!ttsAvailable)return;
@@ -162,17 +166,16 @@ onSnapshot(query(collection(db,'matches'),orderBy('updatedAt','desc')),snap=>{
  const docs=snap.docs.map(d=>({id:d.id,...d.data()})).filter(m=>m.status!=='deleted');
  docs.forEach(m=>{
   const events=Array.isArray(m.ballHistory)?m.ballHistory:[];
-  const oldCount=previousBallCounts.get(m.id);
-  if(!firstSnapshot&&oldCount!==undefined&&events.length>oldCount){
-   const added=events.slice(oldCount);
-   if(added.some(e=>Number(e.run)===6&&e.kind==='normal'&&!e.wicket))playSixSound();
-  }
-  previousBallCounts.set(m.id,events.length);
   let seen=seenCommentaryEvents.get(m.id);
-  if(!seen){seen=new Set();events.forEach(e=>seen.add(commentaryEventKey(e)));seenCommentaryEvents.set(m.id,seen);}
-  else{
-   if(!firstSnapshot&&m.autoCommentaryEnabled!==false){
-    events.forEach(e=>{const key=commentaryEventKey(e);if(!seen.has(key))queueCommentary(m,e);});
+  if(!seen){
+   seen=new Set();events.forEach(e=>seen.add(commentaryEventKey(e)));seenCommentaryEvents.set(m.id,seen);
+  }else{
+   const added=events.filter(e=>!seen.has(commentaryEventKey(e)));
+   if(!firstSnapshot){
+    added.forEach(e=>{
+     if(Number(e.run)===6&&e.kind==='normal'&&!e.wicket)playSixSound();
+     if(m.autoCommentaryEnabled!==false)queueCommentary(m,e);
+    });
    }
    events.forEach(e=>seen.add(commentaryEventKey(e)));
    if(seen.size>700){const keep=events.slice(-650).map(commentaryEventKey);seenCommentaryEvents.set(m.id,new Set(keep));}
