@@ -11,7 +11,7 @@
 </div>
 <p class="refresh" id="commentaryStatus">Turn on Auto Commentary to hear live ball-by-ball updates. Voice is generated on this device.</p><div id="matches"><div class="empty">Connecting to live scores…</div></div><p class="refresh" id="connection">Connecting to Firebase…</p></main><script type="module">
 import { db } from './firebase.js';
-import { collection, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 const root=document.querySelector('#matches'),connection=document.querySelector('#connection');
 const sixAudio=new Audio('./assets/sounds/six-1.mp3');sixAudio.preload='auto';let soundEnabled=false;let firstSnapshot=true;
 const soundToggle=document.querySelector('#soundToggle'),soundStatus=document.querySelector('#soundStatus');
@@ -162,8 +162,8 @@ function bindMatchDetailButtons(){
   const panel=box.querySelector('.detailPanel');if(panel)panel.innerHTML=renderDetails(m,button.dataset.matchTab,Number(chosen));
  }));
 }
-onSnapshot(query(collection(db,'matches'),orderBy('updatedAt','desc')),snap=>{
- const docs=snap.docs.map(d=>({id:d.id,...d.data()})).filter(m=>m.status!=='deleted');
+onSnapshot(collection(db,'matches'),snap=>{
+ const docs=snap.docs.map(d=>({id:d.id,...d.data()})).filter(m=>m.status!=='deleted').sort((a,b)=>{const time=v=>v?.toMillis?.()??(v instanceof Date?v.getTime():0);return time(b.updatedAt)-time(a.updatedAt);});
  docs.forEach(m=>{
   const events=Array.isArray(m.ballHistory)?m.ballHistory:[];
   let seen=seenCommentaryEvents.get(m.id);
