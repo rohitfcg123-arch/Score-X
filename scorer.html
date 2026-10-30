@@ -158,6 +158,8 @@ $('logoutBtn').onclick=async()=>{try{if(stopList){stopList();stopList=null}stopS
 let authStateResolved=false;
 onAuthStateChanged(auth,user=>{
  authStateResolved=true;
+ // Do not let Firebase's sign-in callback interrupt an explicit scorer login.
+ if(loginPending)return;
  currentUser=null;currentName='';
  $('login').classList.remove('hidden');
  $('work').classList.add('hidden');
